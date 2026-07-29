@@ -3,6 +3,7 @@ import { SPECIAL_ROOMS, getKSTTodayString } from './constants';
 import {
   subscribeToReservations,
   subscribeToHistory,
+  subscribeToConnectionStatus,
   saveReservation,
   batchSaveReservations,
   getLocalReservations,
@@ -15,6 +16,7 @@ import { CalendarView } from './components/CalendarView';
 import { DashboardView } from './components/DashboardView';
 import { HistoryView } from './components/HistoryView';
 import { RecurringModal } from './components/RecurringModal';
+import { FirebaseModal } from './components/FirebaseModal';
 
 export default function App() {
   const kstToday = getKSTTodayString();
@@ -32,8 +34,10 @@ export default function App() {
   const [reservations, setReservations] = useState(getLocalReservations());
   const [historyLogs, setHistoryLogs] = useState([]);
 
-  // Recurring Modal State
+  // Recurring Modal & Firebase Modal State
   const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
+  const [isConnected, setIsConnected] = useState(checkFirebaseConnected());
 
   // Subscribe to Realtime Data Stream (멀티 탭, 멀티 창, 멀티 기기 100% 무새로고침 반영)
   useEffect(() => {
@@ -49,9 +53,14 @@ export default function App() {
       }
     });
 
+    const unsubConn = subscribeToConnectionStatus((status) => {
+      setIsConnected(status);
+    });
+
     return () => {
       if (typeof unsubReservations === 'function') unsubReservations();
       if (typeof unsubHistory === 'function') unsubHistory();
+      if (typeof unsubConn === 'function') unsubConn();
     };
   }, []);
 
@@ -102,6 +111,8 @@ export default function App() {
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
+        onOpenFirebaseModal={() => setIsFirebaseModalOpen(true)}
+        isFirebaseConnected={isConnected}
       />
 
       {/* 2. Main Content Views */}
@@ -146,6 +157,15 @@ export default function App() {
         defaultRoomId={activeRoomId}
         currentReservations={reservations}
       />
+
+      {/* 4. Firebase Configuration Modal */}
+      <FirebaseModal
+        isOpen={isFirebaseModalOpen}
+        onClose={() => setIsFirebaseModalOpen(false)}
+        isFirebaseConnected={isConnected}
+        onConnectionChange={(status) => setIsConnected(status)}
+      />
     </div>
   );
 }
+

@@ -1,11 +1,8 @@
-import { initializeApp, getApps, deleteApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, push, remove, serverTimestamp } from 'firebase/database';
+import { initializeApp, getApps } from 'firebase/app';
+import { getDatabase, ref, onValue, set, remove } from 'firebase/database';
 
 // 60명 전 교사 전 기기(PC/스마트폰/태블릿) 100% 무새로고침 실시간 공유 클라우드 싱크 엔진
 const DEFAULT_FIREBASE_DATABASE_URL = import.meta.env.VITE_FIREBASE_DATABASE_URL || 'https://classroom-2026-default-rtdb.firebaseio.com';
-
-// 100% 보장 공용 클라우드 동기화 엔드포인트 (파이어베이스 키가 없거나 차단되어도 전 세계 모든 기기 실시간 연동)
-const PUBLIC_CLOUD_SYNC_URL = 'https://api.jsonbin.io/v3/b/66aa5722e41b4d34e419842a';
 
 const LOCAL_STORAGE_KEY_FIREBASE = 'classroom_firebase_config';
 const LOCAL_STORAGE_KEY_RESERVATIONS = 'classroom_master_reservations_v7';
@@ -14,70 +11,118 @@ const LOCAL_STORAGE_KEY_HISTORY = 'classroom_master_history_v7';
 export function getSavedFirebaseConfig() {
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY_FIREBASE);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.databaseURL) {
+        return parsed;
+      }
+    }
   } catch (e) {
     console.error('Failed to parse saved firebase config', e);
   }
   return {
-    databaseURL: DEFAULT_DATABASE_URL,
+    databaseURL: DEFAULT_FIREBASE_DATABASE_URL,
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY || ''
   };
 }
 
+let firebaseApp = null;
+let firebaseDb = null;
+
+export function initFirebase(configOverride) {
+  const cfg = configOverride || getSavedFirebaseConfig();
+  if (!cfg || !cfg.databaseURL) return false;
+
+  try {
+    const apps = getApps();
+    if (apps.length > 0) {
+      firebaseApp = apps[0];
+    } else {
+      firebaseApp = initializeApp({
+        apiKey: cfg.apiKey || 'AIzaSyDemoKeyForClassroomRTDB2026',
+        databaseURL: cfg.databaseURL,
+        projectId: cfg.projectId || 'classroom-2026',
+        authDomain: cfg.authDomain || ''
+      });
+    }
+    firebaseDb = getDatabase(firebaseApp, cfg.databaseURL);
+    return true;
+  } catch (e) {
+    console.error('Firebase initialization error:', e);
+    return false;
+  }
+}
+
+// 탭/창 간 로컬 동기화 채널
 let broadcastChannel = null;
 if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
   broadcastChannel = new BroadcastChannel('classroom_realtime_sync_v7');
 }
 
-// 1. 60명 전 교사 기기 무새로고침(Zero-F5) 100% 실시간 구독 (Public Cloud Sync + Local Sync)
+// 1. 60명 전 교사 기기 무새로고침(Zero-F5) 100% 실시간 구독
 export function subscribeToReservations(onUpdate) {
   let isSubscribed = true;
 
-  const emitUpdate = (dataMap) => {
-    if (!dataMap || !isSubscribed) return;
-    const currentLocal = getLocalReservations();
-    // 로컬과 원격 데이터를 보존 병합하여 절대로 다른 예약이 지워지지 않도록 보장
-    const merged = { ...currentLocal, ...dataMap };
-    onUpdate(merged);
-    localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(merged));
-  };
+  // 로컬 저장소 데이터 초기 방출
+  const initialLocal = getLocalReservations();
+  onUpdate(initialLocal);
 
-  // 클라우드 원격 동기화 함수 (전 세계 모든 접속자 PC/모바일 수신)
-  const fetchCloudReservations = async () => {
+  const cfg = getSavedFirebaseConfig();
+  if (!firebaseDb) {
+    initFirebase(cfg);
+  }
+
+  let unsubFirebase = null;
+
+  // 파이어베이스 RTDB 웹소켓 실시간 리스너 연결
+  if (firebaseDb) {
     try {
-      // 1차: 파이어베이스 REST API 시도
-      const cfg = getSavedFirebaseConfig();
-      if (cfg.databaseURL && !cfg.databaseURL.includes('default-rtdb.firebaseio.com')) {
-        const rawUrl = cfg.databaseURL.replace(/\/$/, '');
-        const res = await fetch(`${rawUrl}/reservations.json`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data) emitUpdate(data);
-          return;
+      const reservationsRef = ref(firebaseDb, 'reservations');
+      unsubFirebase = onValue(
+        reservationsRef,
+        (snapshot) => {
+          if (!isSubscribed) return;
+          const dataMap = snapshot.val();
+          if (dataMap) {
+            const currentLocal = getLocalReservations();
+            const merged = { ...currentLocal, ...dataMap };
+            localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(merged));
+            onUpdate(merged);
+          }
+        },
+        (err) => {
+          console.warn('[Firebase RTDB Sync Note]:', err);
         }
-      }
+      );
+    } catch (e) {
+      console.warn('Failed to listen to Firebase RTDB:', e);
+    }
+  }
 
-      // 2차: 공용 무오류 클라우드 엔드포인트 시도
-      const res = await fetch(PUBLIC_CLOUD_SYNC_URL, {
-        headers: { 'X-Master-Key': '$2a$10$w8T0M4B3Yn/G6N3xZ/6kOO3w/w9sJ7kG' }
-      }).catch(() => null);
-
-      if (res && res.ok) {
-        const json = await res.json();
-        if (json && json.record && json.record.reservations) {
-          emitUpdate(json.record.reservations);
+  // 클라우드 REST 폴링 백업 (네트워크 차단 등 예외 대비)
+  const fetchCloudReservationsREST = async () => {
+    if (!isSubscribed) return;
+    try {
+      const rawUrl = (cfg.databaseURL || DEFAULT_FIREBASE_DATABASE_URL).replace(/\/$/, '');
+      const res = await fetch(`${rawUrl}/reservations.json`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && isSubscribed) {
+          const currentLocal = getLocalReservations();
+          const merged = { ...currentLocal, ...data };
+          localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(merged));
+          onUpdate(merged);
         }
       }
     } catch (e) {
-      // 오프라인 상태 시 로컬 동기화 유지
+      // 오프라인 상태 유지
     }
   };
 
-  // 초기 및 1.5초 주기 클라우드 폴링 (전 기기 무새로고침 자동 갱신)
-  fetchCloudReservations();
-  const pollInterval = setInterval(fetchCloudReservations, 1500);
+  fetchCloudReservationsREST();
+  const pollInterval = setInterval(fetchCloudReservationsREST, 2000);
 
-  // 로컬 탭/창 및 브라우저 이벤트 동기화
+  // 동일 기기 멀티 탭/창 이벤트 브로드캐스트
   const notifyLocal = () => {
     const cached = getLocalReservations();
     onUpdate(cached);
@@ -97,6 +142,7 @@ export function subscribeToReservations(onUpdate) {
 
   return () => {
     isSubscribed = false;
+    if (typeof unsubFirebase === 'function') unsubFirebase();
     clearInterval(pollInterval);
     window.removeEventListener('classroom_data_change', handleCustomEvent);
     window.removeEventListener('storage', handleStorage);
@@ -108,36 +154,56 @@ export function subscribeToReservations(onUpdate) {
 export function subscribeToHistory(onUpdate) {
   let isSubscribed = true;
 
-  const emitUpdate = (list) => {
-    if (!list || !isSubscribed) return;
-    onUpdate(list);
-    localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(list));
-  };
+  const initialHistory = getLocalHistory();
+  onUpdate(initialHistory);
 
-  const fetchCloudHistory = async () => {
+  const cfg = getSavedFirebaseConfig();
+  if (!firebaseDb) {
+    initFirebase(cfg);
+  }
+
+  let unsubFirebase = null;
+
+  if (firebaseDb) {
     try {
-      const cfg = getSavedFirebaseConfig();
-      if (cfg.databaseURL && !cfg.databaseURL.includes('default-rtdb.firebaseio.com')) {
-        const rawUrl = cfg.databaseURL.replace(/\/$/, '');
-        const res = await fetch(`${rawUrl}/history.json`);
-        if (res.ok) {
-          const dataObj = await res.json();
+      const historyRef = ref(firebaseDb, 'history');
+      unsubFirebase = onValue(
+        historyRef,
+        (snapshot) => {
+          if (!isSubscribed) return;
+          const dataObj = snapshot.val();
           if (dataObj) {
-            const list = Object.keys(dataObj).map(k => ({ id: k, ...dataObj[k] })).sort((a, b) => b.timestamp - a.timestamp);
-            emitUpdate(list.slice(0, 200));
-            return;
+            const list = Array.isArray(dataObj)
+              ? dataObj
+              : Object.keys(dataObj).map((k) => ({ id: k, ...dataObj[k] }));
+            const sorted = list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 200);
+            localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(sorted));
+            onUpdate(sorted);
           }
+        },
+        (err) => {
+          console.warn('[Firebase History Sync Note]:', err);
         }
-      }
+      );
+    } catch (e) {
+      console.warn('Failed to listen to Firebase History:', e);
+    }
+  }
 
-      const res = await fetch(PUBLIC_CLOUD_SYNC_URL, {
-        headers: { 'X-Master-Key': '$2a$10$w8T0M4B3Yn/G6N3xZ/6kOO3w/w9sJ7kG' }
-      }).catch(() => null);
-
-      if (res && res.ok) {
-        const json = await res.json();
-        if (json && json.record && json.record.history) {
-          emitUpdate(json.record.history.slice(0, 200));
+  const fetchCloudHistoryREST = async () => {
+    if (!isSubscribed) return;
+    try {
+      const rawUrl = (cfg.databaseURL || DEFAULT_FIREBASE_DATABASE_URL).replace(/\/$/, '');
+      const res = await fetch(`${rawUrl}/history.json`);
+      if (res.ok) {
+        const dataObj = await res.json();
+        if (dataObj && isSubscribed) {
+          const list = Array.isArray(dataObj)
+            ? dataObj
+            : Object.keys(dataObj).map((k) => ({ id: k, ...dataObj[k] }));
+          const sorted = list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 200);
+          localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(sorted));
+          onUpdate(sorted);
         }
       }
     } catch (e) {
@@ -145,8 +211,8 @@ export function subscribeToHistory(onUpdate) {
     }
   };
 
-  fetchCloudHistory();
-  const pollInterval = setInterval(fetchCloudHistory, 1500);
+  fetchCloudHistoryREST();
+  const pollInterval = setInterval(fetchCloudHistoryREST, 2000);
 
   const notifyLocal = () => {
     const cached = getLocalHistory();
@@ -167,6 +233,7 @@ export function subscribeToHistory(onUpdate) {
 
   return () => {
     isSubscribed = false;
+    if (typeof unsubFirebase === 'function') unsubFirebase();
     clearInterval(pollInterval);
     window.removeEventListener('classroom_data_change', handleCustomEvent);
     window.removeEventListener('storage', handleStorage);
@@ -174,13 +241,36 @@ export function subscribeToHistory(onUpdate) {
   };
 }
 
-// 3. 단일 예약 저장/수정/삭제 (기기 A에서 작성 시 클라우드 전송 ➡️ 기기 B, C, D... 1.5초 내 무새로고침 즉시 반영)
+// 3. 파이어베이스 연동 실시간 상태 리스너
+export function subscribeToConnectionStatus(onChange) {
+  if (!firebaseDb) {
+    initFirebase();
+  }
+  if (!firebaseDb) {
+    onChange(false);
+    return () => {};
+  }
+  try {
+    const connectedRef = ref(firebaseDb, '.info/connected');
+    const unsub = onValue(connectedRef, (snap) => {
+      onChange(snap.val() === true);
+    }, () => {
+      onChange(false);
+    });
+    return unsub;
+  } catch (e) {
+    onChange(false);
+    return () => {};
+  }
+}
+
+// 4. 단일 예약 저장/수정/삭제 (전 기기 무새로고침 즉시 반영)
 export async function saveReservation(roomId, dateStr, periodId, text, oldText = '') {
   const key = `${roomId}_${dateStr}_${periodId}`;
   const nowTs = Date.now();
   const trimmed = (text || '').trim();
 
-  const logText = trimmed 
+  const logText = trimmed
     ? `[${dateStr}] ${roomIdName(roomId)} ${periodIdName(periodId)}: '${trimmed}' 예약 등록됨`
     : `[${dateStr}] ${roomIdName(roomId)} ${periodIdName(periodId)}: 예약 삭제됨`;
 
@@ -188,16 +278,20 @@ export async function saveReservation(roomId, dateStr, periodId, text, oldText =
   const currentReservations = getLocalReservations();
   const updatedCache = { ...currentReservations };
 
+  const resItem = trimmed
+    ? { roomId, date: dateStr, periodId, text: trimmed, updatedAt: nowTs }
+    : null;
+
   if (trimmed) {
-    updatedCache[key] = { roomId, date: dateStr, periodId, text: trimmed, updatedAt: nowTs };
+    updatedCache[key] = resItem;
   } else {
     delete updatedCache[key];
   }
   localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(updatedCache));
 
   const localHist = getLocalHistory();
-  localHist.unshift({
-    id: 'h_' + nowTs + '_' + Math.random().toString(36).substr(2, 6),
+  const newHistItem = {
+    id: 'h_' + nowTs + '_' + Math.random().toString(36).substring(2, 8),
     action: trimmed ? (oldText ? 'UPDATE' : 'CREATE') : 'DELETE',
     roomId,
     date: dateStr,
@@ -205,8 +299,10 @@ export async function saveReservation(roomId, dateStr, periodId, text, oldText =
     text: trimmed,
     logText,
     timestamp: nowTs
-  });
-  localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(localHist.slice(0, 200)));
+  };
+  localHist.unshift(newHistItem);
+  const updatedHistory = localHist.slice(0, 200);
+  localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(updatedHistory));
 
   if (broadcastChannel) {
     broadcastChannel.postMessage({ type: 'RESERVATIONS_UPDATED' });
@@ -214,13 +310,13 @@ export async function saveReservation(roomId, dateStr, periodId, text, oldText =
   }
   window.dispatchEvent(new CustomEvent('classroom_data_change'));
 
-  // 2. 클라우드 원격 서버 동기화 (전 세계 모든 접속자 기기 푸시)
-  syncToCloud(updatedCache, localHist);
+  // 2. 클라우드 파이어베이스 원격 전송
+  syncToCloud(key, resItem, updatedCache, newHistItem, updatedHistory);
 
   return updatedCache;
 }
 
-// 4. 다중/반복 예약 일괄 등록
+// 5. 다중/반복 예약 일괄 등록
 export async function batchSaveReservations(reservationsArray, batchLogText) {
   if (!reservationsArray || reservationsArray.length === 0) return;
   const nowTs = Date.now();
@@ -228,7 +324,7 @@ export async function batchSaveReservations(reservationsArray, batchLogText) {
   const currentReservations = getLocalReservations();
   const updatedCache = { ...currentReservations };
 
-  reservationsArray.forEach(item => {
+  reservationsArray.forEach((item) => {
     const key = `${item.roomId}_${item.date}_${item.periodId}`;
     updatedCache[key] = {
       roomId: item.roomId,
@@ -241,14 +337,16 @@ export async function batchSaveReservations(reservationsArray, batchLogText) {
   localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(updatedCache));
 
   const localHist = getLocalHistory();
-  localHist.unshift({
-    id: 'h_' + nowTs + '_' + Math.random().toString(36).substr(2, 6),
+  const newHistItem = {
+    id: 'h_' + nowTs + '_' + Math.random().toString(36).substring(2, 8),
     action: 'BATCH_CREATE',
     count: reservationsArray.length,
     logText: batchLogText,
     timestamp: nowTs
-  });
-  localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(localHist.slice(0, 200)));
+  };
+  localHist.unshift(newHistItem);
+  const updatedHistory = localHist.slice(0, 200);
+  localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(updatedHistory));
 
   if (broadcastChannel) {
     broadcastChannel.postMessage({ type: 'RESERVATIONS_UPDATED' });
@@ -256,47 +354,68 @@ export async function batchSaveReservations(reservationsArray, batchLogText) {
   }
   window.dispatchEvent(new CustomEvent('classroom_data_change'));
 
-  syncToCloud(updatedCache, localHist);
+  syncToCloud(null, null, updatedCache, newHistItem, updatedHistory);
 
   return updatedCache;
 }
 
-// 클라우드 원격 전송 Helper
-async function syncToCloud(reservationsMap, historyList) {
+// 파이어베이스 클라우드 동기화 Helper
+async function syncToCloud(singleKey, singleResItem, fullReservationsMap, newHistItem, fullHistoryList) {
   const cfg = getSavedFirebaseConfig();
-  if (cfg.databaseURL && !cfg.databaseURL.includes('default-rtdb.firebaseio.com')) {
+  if (!firebaseDb) {
+    initFirebase(cfg);
+  }
+
+  // 1. Firebase RTDB SDK 푸시 (가장 빠름 & 실시간 푸시)
+  if (firebaseDb) {
     try {
-      const rawUrl = cfg.databaseURL.replace(/\/$/, '');
-      await fetch(`${rawUrl}/reservations.json`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reservationsMap)
-      });
-      await fetch(`${rawUrl}/history.json`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(historyList)
-      });
+      if (singleKey !== null && singleKey !== undefined) {
+        const itemRef = ref(firebaseDb, `reservations/${singleKey}`);
+        if (singleResItem) {
+          await set(itemRef, singleResItem);
+        } else {
+          await remove(itemRef);
+        }
+      } else if (fullReservationsMap) {
+        const allRef = ref(firebaseDb, 'reservations');
+        await set(allRef, fullReservationsMap);
+      }
+
+      if (newHistItem) {
+        const histRef = ref(firebaseDb, `history/${newHistItem.id}`);
+        await set(histRef, newHistItem);
+      }
     } catch (e) {
-      console.warn('[Firebase Cloud Sync Note]:', e);
+      console.warn('[Firebase RTDB Write Warning]:', e);
     }
   }
 
-  // 공용 클라우드 백업 Sync
+  // 2. REST API PUT 백업
   try {
-    await fetch(PUBLIC_CLOUD_SYNC_URL, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Master-Key': '$2a$10$w8T0M4B3Yn/G6N3xZ/6kOO3w/w9sJ7kG'
-      },
-      body: JSON.stringify({
-        reservations: reservationsMap,
-        history: historyList.slice(0, 200)
-      })
-    });
+    const rawUrl = (cfg.databaseURL || DEFAULT_FIREBASE_DATABASE_URL).replace(/\/$/, '');
+    if (singleKey && singleResItem) {
+      await fetch(`${rawUrl}/reservations/${singleKey}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(singleResItem)
+      });
+    } else if (fullReservationsMap) {
+      await fetch(`${rawUrl}/reservations.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fullReservationsMap)
+      });
+    }
+
+    if (newHistItem) {
+      await fetch(`${rawUrl}/history/${newHistItem.id}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newHistItem)
+      });
+    }
   } catch (e) {
-    console.warn('[Public Cloud Sync Note]:', e);
+    console.warn('[Firebase REST Sync Warning]:', e);
   }
 }
 
@@ -336,5 +455,6 @@ function periodIdName(pid) {
 }
 
 export function isFirebaseConnected() {
-  return true;
+  return !!firebaseDb;
 }
+

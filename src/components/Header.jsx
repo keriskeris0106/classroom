@@ -1,10 +1,12 @@
 import React from 'react';
-import { Home, Calendar, LayoutDashboard, History, Repeat, Printer } from 'lucide-react';
+import { Home, Calendar, LayoutDashboard, History, Repeat, Printer, Database, CheckCircle, WifiOff } from 'lucide-react';
 
 export function Header({
   currentTab,
   setCurrentTab,
-  onOpenRecurringModal
+  onOpenRecurringModal,
+  onOpenFirebaseModal,
+  isFirebaseConnected
 }) {
   const handlePrint = () => {
     window.print();
@@ -69,6 +71,24 @@ export function Header({
 
         {/* Action Controls */}
         <div className="nav-actions">
+          {/* Firebase Connection Status Button */}
+          <button
+            className="btn"
+            onClick={onOpenFirebaseModal}
+            style={{
+              backgroundColor: isFirebaseConnected ? '#f0fdf4' : '#fffbeb',
+              borderColor: isFirebaseConnected ? '#86efac' : '#fde047',
+              color: isFirebaseConnected ? '#15803d' : '#a16207',
+              fontWeight: '700',
+              fontSize: '0.825rem',
+              padding: '0.45rem 0.75rem'
+            }}
+            title="파이어베이스 클라우드 동기화 설정"
+          >
+            {isFirebaseConnected ? <CheckCircle size={15} color="#16a34a" /> : <WifiOff size={15} color="#d97706" />}
+            <span>{isFirebaseConnected ? '파이어베이스 연동됨' : 'DB 설정'}</span>
+          </button>
+
           {/* Recurring Reservation Button */}
           <button className="btn btn-warning" onClick={onOpenRecurringModal}>
             <Repeat size={15} />
@@ -85,3 +105,4 @@ export function Header({
     </header>
   );
 }
+
