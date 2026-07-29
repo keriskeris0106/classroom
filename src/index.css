@@ -1,6 +1,6 @@
 /* 
   교내 특별실 실시간 예약 시스템 CSS Design System
-  Wide PC Monitor View, Crosshair Hover, Yellow Reservation Accent, Print Styling
+  Wide PC Monitor View, Crosshair Hover, Yellow Reservation Accent, Single Page A4 Print Styling
 */
 
 @layer base {
@@ -18,11 +18,9 @@
     --brand-indigo: #4f46e5;
     --brand-indigo-light: #eef2ff;
     
-    /* User reservation single vibrant color */
     --reservation-bg: #fef08a;
     --reservation-border: #fde047;
     --reservation-text: #713f12;
-    --reservation-hover: #fef08a;
 
     --crosshair-bg: rgba(238, 242, 255, 0.65);
     --today-border: #4f46e5;
@@ -45,7 +43,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 100% Wide Container */
 .app-container {
   min-height: 100vh;
   display: flex;
@@ -53,12 +50,12 @@ body {
   width: 100%;
 }
 
-/* Top Sticky Navbar */
+/* Navbar */
 .navbar {
   position: sticky;
   top: 0;
   z-index: 40;
-  background-color: rgba(255, 255, 255, 0.95);
+  background-color: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-color);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
@@ -68,8 +65,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid var(--border-color);
+  padding: 0.65rem 1.5rem;
   gap: 1rem;
 }
 
@@ -82,19 +78,19 @@ body {
 .brand-icon {
   font-size: 1.75rem;
   background: var(--brand-indigo-light);
-  padding: 0.4rem 0.6rem;
+  padding: 0.35rem 0.55rem;
   border-radius: 12px;
 }
 
 .brand-title {
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   font-weight: 800;
   color: var(--text-primary);
   letter-spacing: -0.02em;
 }
 
 .brand-subtitle {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--brand-indigo);
   background: var(--brand-indigo-light);
@@ -104,11 +100,10 @@ body {
   margin-left: 0.5rem;
 }
 
-/* Action Controls & Navigation */
 .nav-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
 }
 
 .btn {
@@ -116,8 +111,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  padding: 0.5rem 0.9rem;
-  font-size: 0.875rem;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.85rem;
   font-weight: 600;
   border-radius: 8px;
   border: 1px solid var(--border-color);
@@ -154,23 +149,13 @@ body {
   background-color: #fde047;
 }
 
-/* Special Rooms Tab Slider Bar */
-.rooms-tab-container {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.5rem 1.5rem;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  background: #fafafa;
-}
-
+/* Room Tab Selector */
 .room-tab-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.85rem;
-  font-size: 0.875rem;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
   font-weight: 600;
   border-radius: 8px;
   border: 1px solid transparent;
@@ -195,65 +180,19 @@ body {
 }
 
 .tab-badge-location {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 500;
   color: var(--text-muted);
   background: rgba(0, 0, 0, 0.04);
-  padding: 0.1rem 0.35rem;
+  padding: 0.08rem 0.3rem;
   border-radius: 4px;
 }
 
-/* Month Control Bar */
-.month-control-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1.5rem;
-  background-color: var(--bg-surface);
-  border-bottom: 1px solid var(--border-color);
-}
-
-.month-selector-group {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.month-btn {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  border-radius: 6px;
-  border: 1px solid var(--border-color);
-  background-color: var(--bg-surface);
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-
-.month-btn.active {
-  background-color: var(--text-primary);
-  color: white;
-  border-color: var(--text-primary);
-}
-
-.date-picker-input {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.875rem;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  outline: none;
-  font-family: inherit;
-}
-
-.date-picker-input:focus {
-  border-color: var(--brand-indigo);
-}
-
-/* Main Content Wide Layout */
+/* Main Content */
 .main-content {
   flex: 1;
   display: flex;
-  padding: 1rem 1.5rem;
+  padding: 1.25rem 1.5rem;
   gap: 1.25rem;
   width: 100%;
 }
@@ -266,10 +205,8 @@ body {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
   display: flex;
   flex-direction: column;
-  overflow-x: auto;
 }
 
-/* Crosshair Wide Grid Table */
 .grid-table {
   width: 100%;
   border-collapse: collapse;
@@ -286,19 +223,18 @@ body {
   transition: background-color 0.1s ease;
 }
 
-/* Table Header */
 .period-header-th {
   width: 130px;
   min-width: 130px;
   background-color: #f8fafc;
-  padding: 0.75rem 0.5rem;
+  padding: 0.65rem 0.5rem;
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-secondary);
 }
 
 .date-header-th {
-  padding: 0.6rem 0.25rem;
+  padding: 0.55rem 0.25rem;
   background-color: #f8fafc;
   font-size: 0.825rem;
   font-weight: 600;
@@ -314,31 +250,29 @@ body {
   display: inline-block;
   background-color: var(--brand-indigo);
   color: white;
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 700;
   padding: 0.05rem 0.35rem;
   border-radius: 9999px;
   margin-top: 0.15rem;
 }
 
-/* Row Headings (Periods) */
 .period-cell {
   background-color: #f8fafc;
-  padding: 0.6rem 0.4rem;
+  padding: 0.55rem 0.4rem;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.825rem;
   color: var(--text-primary);
 }
 
 .period-time-sub {
   display: block;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 400;
   color: var(--text-muted);
   margin-top: 0.1rem;
 }
 
-/* Crosshair Highlight Effects */
 .grid-table td.crosshair-row,
 .grid-table td.crosshair-col {
   background-color: var(--crosshair-bg) !important;
@@ -355,10 +289,9 @@ body {
   border-right: 2px solid var(--today-border) !important;
 }
 
-/* Reservation Cell Content */
 .reservation-cell {
-  height: 68px;
-  padding: 0.25rem;
+  height: 64px;
+  padding: 0.2rem;
   cursor: pointer;
 }
 
@@ -368,19 +301,18 @@ body {
 
 .add-placeholder-icon {
   opacity: 0;
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   color: var(--text-muted);
   transition: opacity 0.15s ease;
 }
 
-/* Single Vibrant Color Reservation Badge */
 .reservation-badge {
   background-color: var(--reservation-bg);
   border: 1px solid var(--reservation-border);
   color: var(--reservation-text);
-  padding: 0.4rem 0.5rem;
+  padding: 0.35rem 0.45rem;
   border-radius: 6px;
-  font-size: 0.85rem;
+  font-size: 0.825rem;
   font-weight: 700;
   word-break: break-word;
   line-height: 1.3;
@@ -397,59 +329,7 @@ body {
   box-shadow: 0 4px 8px rgba(113, 63, 18, 0.15);
 }
 
-/* History Sidebar Panel */
-.history-panel {
-  width: 320px;
-  background: var(--bg-surface);
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
-}
-
-.history-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.history-title {
-  font-size: 0.95rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  overflow-y: auto;
-  max-height: calc(100vh - 240px);
-}
-
-.history-item {
-  padding: 0.5rem 0.65rem;
-  background: var(--bg-subtle);
-  border-radius: 6px;
-  font-size: 0.78rem;
-  line-height: 1.4;
-  border-left: 3px solid var(--brand-indigo);
-}
-
-.history-time {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  margin-top: 0.15rem;
-}
-
-/* Modal Windows */
+/* Modals */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -481,23 +361,22 @@ body {
 }
 
 .modal-title {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 700;
 }
 
-/* Exact 2 Buttons Alert Box */
 .warning-box {
   background-color: #fffbe6;
   border: 1px solid #ffe58f;
-  padding: 1rem;
+  padding: 0.85rem;
   border-radius: 8px;
   margin-bottom: 1.25rem;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 600;
   color: #873800;
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
 }
 
 .exact-two-buttons {
@@ -507,8 +386,8 @@ body {
 }
 
 .btn-modal-action {
-  padding: 0.75rem 1rem;
-  font-size: 0.925rem;
+  padding: 0.7rem 1rem;
+  font-size: 0.9rem;
   font-weight: 700;
   border-radius: 8px;
   cursor: pointer;
@@ -535,7 +414,6 @@ body {
   background-color: #e2e8f0;
 }
 
-/* Animations */
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -546,34 +424,54 @@ body {
   to { transform: scale(1); opacity: 1; }
 }
 
-/* Print View CSS Optimization */
+/* 
+  🖨️ SINGLE PAGE A4 LANDSCAPE PRINT STYLING (인쇄 시 딱 1페이지에 노출)
+*/
 @media print {
   @page {
     size: A4 landscape;
-    margin: 10mm;
+    margin: 4mm 6mm;
   }
   
-  body {
+  html, body {
+    width: 297mm;
+    height: 210mm;
     background: white !important;
     color: black !important;
+    font-size: 11pt !important;
+    overflow: hidden !important;
   }
 
   .navbar,
-  .month-control-bar,
-  .history-panel,
+  .no-print,
+  .nav-top-bar,
   .nav-actions,
-  .no-print {
+  button,
+  .month-control-bar,
+  .history-panel {
     display: none !important;
   }
 
   .main-content {
     padding: 0 !important;
     margin: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
   }
 
   .calendar-section {
-    border: none !important;
+    border: 2px solid #000 !important;
     box-shadow: none !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .grid-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
   }
 
   .grid-table th,
@@ -581,12 +479,33 @@ body {
     border: 1px solid #000 !important;
     color: #000 !important;
     background: transparent !important;
+    padding: 2px 4px !important;
+  }
+
+  .period-cell {
+    font-size: 9pt !important;
+    font-weight: bold !important;
+  }
+
+  .period-header-th,
+  .date-header-th {
+    background-color: #f0f0f0 !important;
+    font-size: 10pt !important;
+    padding: 4px !important;
+  }
+
+  .reservation-cell {
+    height: 48px !important;
+    padding: 1px !important;
   }
 
   .reservation-badge {
-    background: #f0f0f0 !important;
+    background: #e2e8f0 !important;
     color: #000 !important;
-    border: 1px solid #666 !important;
+    border: 1px solid #000 !important;
+    font-size: 9pt !important;
+    font-weight: bold !important;
     box-shadow: none !important;
+    border-radius: 2px !important;
   }
 }

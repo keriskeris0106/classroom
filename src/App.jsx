@@ -15,28 +15,28 @@ import { CalendarView } from './components/CalendarView';
 import { DashboardView } from './components/DashboardView';
 import { HistoryView } from './components/HistoryView';
 import { RecurringModal } from './components/RecurringModal';
-import { FirebaseModal } from './components/FirebaseModal';
 
 export default function App() {
   const kstToday = getKSTTodayString();
 
-  // 4 Top-level Tabs: 'home' | 'reservation' | 'dashboard' | 'history'
+  // 4 Main Top Tabs: 'home' | 'reservation' | 'dashboard' | 'history'
   const [currentTab, setCurrentTab] = useState('home');
   // Active Room ID in Calendar View
   const [activeRoomId, setActiveRoomId] = useState(SPECIAL_ROOMS[0].id);
-  // Current Active Week Date (defaults to KST Today)
+  // Current Active Week Date
   const [currentWeekDate, setCurrentWeekDate] = useState(kstToday);
+  // Selected Dashboard Date
+  const [selectedDashboardDate, setSelectedDashboardDate] = useState(kstToday);
 
-  // Real-time Data States
+  // Real-time Data States (Firestore + Realtime DB + Local)
   const [reservations, setReservations] = useState(getLocalReservations());
   const [historyLogs, setHistoryLogs] = useState([]);
   const [isConnected, setIsConnected] = useState(checkFirebaseConnected());
 
-  // Modals
+  // Recurring Modal State
   const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
-  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
 
-  // Subscribe to Realtime Updates
+  // Subscribe to Realtime Data Stream across 60+ Teachers
   useEffect(() => {
     const unsubReservations = subscribeToReservations((val) => {
       setReservations(val || {});
@@ -60,7 +60,7 @@ export default function App() {
     setCurrentTab('reservation');
   };
 
-  // Single Reservation Save / Update / Delete with Instant UI Feedback
+  // Single Reservation Save / Edit / Delete with Instant UI Updates
   const handleSaveReservation = async (roomId, dateStr, periodId, text, oldText) => {
     try {
       const updatedMap = await saveReservation(roomId, dateStr, periodId, text, oldText);
@@ -87,7 +87,7 @@ export default function App() {
     }
   };
 
-  // Dashboard Cell Click Handler -> Jump to Reservation View
+  // Dashboard Cell Click Handler -> Teleport to Calendar View for Room & Date
   const handleSelectRoomAndDate = (roomId, dateStr) => {
     setActiveRoomId(roomId);
     setCurrentWeekDate(dateStr);
@@ -96,16 +96,14 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* 1. Top Header with 4 Main Tabs */}
+      {/* 1. Sleek Top Header Navigation */}
       <Header
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
-        onOpenFirebaseModal={() => setIsFirebaseModalOpen(true)}
-        isFirebaseConnected={isConnected}
       />
 
-      {/* 2. Main Content View Area */}
+      {/* 2. Main Content Views */}
       <main className="main-content">
         {currentTab === 'home' && (
           <HomeView
@@ -128,6 +126,8 @@ export default function App() {
 
         {currentTab === 'dashboard' && (
           <DashboardView
+            selectedDashboardDate={selectedDashboardDate}
+            setSelectedDashboardDate={setSelectedDashboardDate}
             reservations={reservations}
             onSaveReservation={handleSaveReservation}
             onSelectRoomAndDate={handleSelectRoomAndDate}
@@ -145,14 +145,6 @@ export default function App() {
         onClose={() => setIsRecurringModalOpen(false)}
         onBatchSave={handleBatchSave}
         defaultRoomId={activeRoomId}
-      />
-
-      {/* 4. Firebase Config Modal */}
-      <FirebaseModal
-        isOpen={isFirebaseModalOpen}
-        onClose={() => setIsFirebaseModalOpen(false)}
-        isFirebaseConnected={isConnected}
-        onConnectionChange={(status) => setIsConnected(status)}
       />
     </div>
   );

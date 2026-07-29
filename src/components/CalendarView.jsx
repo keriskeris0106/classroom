@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { SPECIAL_ROOMS, PERIODS, getKSTTodayString, getWeekDaysMonToFri, SEMESTER_START_DATE, SEMESTER_END_DATE } from '../constants';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertTriangle, Check, Trash2, X, Plus } from 'lucide-react';
+import { SPECIAL_ROOMS, PERIODS, getKSTTodayString, getWeekDaysMonToFri, getMonthWeekdays, SEMESTER_START_DATE, SEMESTER_END_DATE, MONTHS } from '../constants';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertTriangle, Check, Trash2, X, Search, Layers, Grid } from 'lucide-react';
 
 export function CalendarView({
   activeRoomId,
@@ -10,10 +10,18 @@ export function CalendarView({
   reservations,
   onSaveReservation
 }) {
+  // Calendar View Mode: 'month' (한 달 전체 보기) vs 'week' (주차별 보기)
+  const [viewMode, setViewMode] = useState('month');
+
+  // Month View State: Year and Month
+  const initialDateObj = new Date(currentWeekDate);
+  const [selectedYear, setSelectedYear] = useState(initialDateObj.getFullYear() || 2026);
+  const [selectedMonth, setSelectedMonth] = useState(initialDateObj.getMonth() + 1 || 8);
+
   const [hoveredRow, setHoveredRow] = useState(null); // periodId
   const [hoveredCol, setHoveredCol] = useState(null); // dateStr 'YYYY-MM-DD'
 
-  // Overwrite Confirmation Modal State (Exact 2 Buttons)
+  // Overwrite Confirmation Modal State (Exact 2 Buttons + Delete)
   const [overwriteTarget, setOverwriteTarget] = useState(null); // { roomId, dateStr, periodId, existingText }
   // Quick Free Text Edit Modal State
   const [editTarget, setEditTarget] = useState(null); // { roomId, dateStr, periodId, existingText }
@@ -22,18 +30,24 @@ export function CalendarView({
   const kstToday = getKSTTodayString();
   const roomObj = SPECIAL_ROOMS.find(r => r.id === activeRoomId) || SPECIAL_ROOMS[0];
 
-  // 지정된 날짜 기준 월~금 5개 평일 날짜 배열 구하기
+  // 1. 주차별 평일 (월~금 5일)
   const weekDays = getWeekDaysMonToFri(currentWeekDate);
   const monDateStr = weekDays[0].dateStr;
   const friDateStr = weekDays[4].dateStr;
 
-  // 주차 이동 (이전주 / 다음주)
+  // 2. 월간 전체 평일 리스트
+  const monthWeekdays = getMonthWeekdays(selectedYear, selectedMonth);
+
+  // 주차 이동
   const handlePrevWeek = () => {
     const d = new Date(monDateStr);
     d.setDate(d.getDate() - 7);
     const prevStr = d.toISOString().split('T')[0];
-    if (prevStr >= '2026-08-10') { // 2학기 준비 1주일 전까지 허용
+    if (prevStr >= '2026-08-10') {
       setCurrentWeekDate(prevStr);
+      const parts = prevStr.split('-');
+      setSelectedYear(parseInt(parts[0], 10));
+      setSelectedMonth(parseInt(parts[1], 10));
     }
   };
 
@@ -43,12 +57,28 @@ export function CalendarView({
     const nextStr = d.toISOString().split('T')[0];
     if (nextStr <= '2027-01-15') {
       setCurrentWeekDate(nextStr);
+      const parts = nextStr.split('-');
+      setSelectedYear(parseInt(parts[0], 10));
+      setSelectedMonth(parseInt(parts[1], 10));
     }
   };
 
-  // 오늘 날짜로 자동 이동 버튼 클릭
+  // 원하는 날짜 순간이동 (Teleport)
+  const handleDateTeleport = (targetDateStr) => {
+    if (!targetDateStr) return;
+    setCurrentWeekDate(targetDateStr);
+    const parts = targetDateStr.split('-');
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (MONTHS.some(item => item.year === y && item.month === m)) {
+      setSelectedYear(y);
+      setSelectedMonth(m);
+    }
+  };
+
+  // 오늘 날짜로 자동 이동
   const handleGoToday = () => {
-    setCurrentWeekDate(kstToday);
+    handleDateTeleport(kstToday);
   };
 
   // 셀 클릭
@@ -57,7 +87,7 @@ export function CalendarView({
     const existing = reservations[key] ? reservations[key].text : '';
 
     if (existing && existing.trim()) {
-      // 1. 이미 예약된 칸 -> 딱 2개 버튼 경고 팝업
+      // 이미 예약된 칸 -> 딱 2개 버튼 경고 팝업
       setOverwriteTarget({
         roomId: activeRoomId,
         dateStr,
@@ -65,7 +95,7 @@ export function CalendarView({
         existingText: existing.trim()
       });
     } else {
-      // 2. 빈 셀 -> 입력 팝업
+      // 빈 셀 -> 입력 팝업
       setEditTarget({
         roomId: activeRoomId,
         dateStr,
@@ -87,6 +117,19 @@ export function CalendarView({
 
   // 경고 팝업: "아니오, 변경하지 않겠습니다"
   const handleConfirmOverwriteNo = () => {
+    setOverwriteTarget(null);
+  };
+
+  // 경고 팝업에서 즉시 일정 삭제
+  const handleDirectDeleteFromWarning = () => {
+    if (!overwriteTarget) return;
+    onSaveReservation(
+      overwriteTarget.roomId,
+      overwriteTarget.dateStr,
+      overwriteTarget.periodId,
+      '',
+      overwriteTarget.existingText
+    );
     setOverwriteTarget(null);
   };
 
@@ -121,11 +164,12 @@ export function CalendarView({
   };
 
   const periodObj = editTarget ? PERIODS.find(p => p.id === editTarget.periodId) : null;
+  const activeDaysList = viewMode === 'month' ? monthWeekdays : weekDays;
 
   return (
     <section className="calendar-section" style={{ width: '100%' }}>
-      {/* 1. Room Tab Selector & Navigation */}
-      <div style={{ background: '#fafafa', borderBottom: '1px solid var(--border-color)', padding: '0.5rem 1rem' }}>
+      {/* 1. Room Selector Bar */}
+      <div style={{ background: '#fafafa', borderBottom: '1px solid var(--border-color)', padding: '0.5rem 1rem' }} className="no-print">
         <div style={{ display: 'flex', gap: '0.35rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
           {SPECIAL_ROOMS.map(room => (
             <button
@@ -141,77 +185,128 @@ export function CalendarView({
         </div>
       </div>
 
-      {/* 2. Weekly Navigation Bar & Today Button */}
+      {/* 2. Control Bar: Mode Toggle + Month Buttons + Teleport Date Search + Today Jump */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justify: 'space-between',
         padding: '0.75rem 1.25rem',
         background: 'var(--bg-surface)',
-        borderBottom: '1px solid var(--border-color)'
-      }}>
+        borderBottom: '1px solid var(--border-color)',
+        flexWrap: 'wrap',
+        gap: '0.75rem'
+      }} className="no-print">
         {/* Active Room Title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
           <span style={{ fontSize: '1.5rem' }}>{roomObj.icon}</span>
           <div>
             <h2 style={{ fontSize: '1.2rem', fontWeight: '800' }}>
-              [{roomObj.name}] 주차별 예약 달력
+              [{roomObj.name}] 예약 달력
             </h2>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📍 {roomObj.location}</span>
           </div>
         </div>
 
-        {/* Week Navigator Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button className="btn" onClick={handlePrevWeek} title="이전주">
-            <ChevronLeft size={18} />
-            <span>이전주</span>
+        {/* View Mode Toggle: [📅 한달 전체 보기] vs [🗓️ 주차별 보기] */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: '#f1f5f9', padding: '0.2rem', borderRadius: '8px' }}>
+          <button
+            className={`btn ${viewMode === 'month' ? 'btn-primary' : ''}`}
+            onClick={() => setViewMode('month')}
+            style={{ border: 'none', padding: '0.35rem 0.75rem', fontSize: '0.825rem' }}
+          >
+            <Grid size={15} />
+            <span>📅 한달 전체 보기</span>
           </button>
+          <button
+            className={`btn ${viewMode === 'week' ? 'btn-primary' : ''}`}
+            onClick={() => setViewMode('week')}
+            style={{ border: 'none', padding: '0.35rem 0.75rem', fontSize: '0.825rem' }}
+          >
+            <Layers size={15} />
+            <span>🗓️ 주차별 보기</span>
+          </button>
+        </div>
 
-          <div style={{ fontSize: '1rem', fontWeight: '800', background: '#f1f5f9', padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-            📅 {monDateStr} (월) ~ {friDateStr} (금)
+        {/* Month Selector buttons for Month View */}
+        {viewMode === 'month' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            {MONTHS.map(m => (
+              <button
+                key={`${m.year}-${m.month}`}
+                className={`btn ${selectedYear === m.year && selectedMonth === m.month ? 'btn-primary' : ''}`}
+                onClick={() => { setSelectedYear(m.year); setSelectedMonth(m.month); }}
+                style={{ padding: '0.35rem 0.65rem', fontSize: '0.825rem' }}
+              >
+                {m.month}월
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Week Navigator for Week View */}
+        {viewMode === 'week' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <button className="btn" onClick={handlePrevWeek} style={{ padding: '0.35rem 0.6rem' }}>
+              <ChevronLeft size={16} />
+            </button>
+            <span style={{ fontSize: '0.875rem', fontWeight: '800', background: '#f1f5f9', padding: '0.35rem 0.75rem', borderRadius: '6px' }}>
+              {monDateStr} ~ {friDateStr}
+            </span>
+            <button className="btn" onClick={handleNextWeek} style={{ padding: '0.35rem 0.6rem' }}>
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* Date Teleport Picker & Today Jump */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <Search size={15} color="#64748b" />
+            <input
+              type="date"
+              className="date-picker-input"
+              style={{ fontSize: '0.825rem', padding: '0.35rem 0.6rem' }}
+              min={SEMESTER_START_DATE}
+              max={SEMESTER_END_DATE}
+              value={currentWeekDate}
+              onChange={(e) => handleDateTeleport(e.target.value)}
+              title="원하는 날짜로 순간이동"
+            />
           </div>
 
-          <button className="btn" onClick={handleNextWeek} title="다음주">
-            <span>다음주</span>
-            <ChevronRight size={18} />
-          </button>
-
-          {/* Today Button - Jump to Today */}
           <button
             className="btn"
             onClick={handleGoToday}
-            style={{ fontWeight: '800', backgroundColor: '#eef2ff', borderColor: '#c7d2fe', color: '#4f46e5' }}
+            style={{ fontWeight: '800', backgroundColor: '#eef2ff', borderColor: '#c7d2fe', color: '#4f46e5', fontSize: '0.825rem', padding: '0.35rem 0.75rem' }}
           >
-            <CalendarIcon size={16} />
+            <CalendarIcon size={15} />
             <span>오늘 ({kstToday}) 이동</span>
           </button>
         </div>
       </div>
 
-      {/* 3. High-Readability 5-Day Weekly Table */}
+      {/* 3. Grid Table */}
       <div style={{ overflowX: 'auto', width: '100%' }}>
-        <table className="grid-table" style={{ tableLayout: 'fixed' }} onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
+        <table className="grid-table" onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
           <thead>
             <tr>
-              <th className="period-header-th" style={{ width: '140px' }}>교시 \ 요일</th>
-              {weekDays.map(dayObj => {
+              <th className="period-header-th" style={{ width: '130px' }}>교시 \ 날짜</th>
+              {activeDaysList.map(dayObj => {
                 const isToday = dayObj.dateStr === kstToday;
                 return (
                   <th
                     key={dayObj.dateStr}
                     className={`date-header-th ${isToday ? 'today-column' : ''}`}
-                    style={{ width: '20%', padding: '0.75rem 0.5rem' }}
                   >
                     <div>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                         {dayObj.month}월
                       </span>
                       <br />
-                      <span style={{ fontSize: '1.25rem', fontWeight: '900' }}>
+                      <span style={{ fontSize: '1.15rem', fontWeight: '900' }}>
                         {dayObj.dayNumber}일
                       </span>
-                      <span style={{ fontSize: '0.95rem', fontWeight: '800', marginLeft: '0.3rem', color: 'var(--brand-indigo)' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: '800', marginLeft: '0.2rem', color: 'var(--brand-indigo)' }}>
                         ({dayObj.weekdayName})
                       </span>
                     </div>
@@ -234,8 +329,8 @@ export function CalendarView({
                     <span className="period-time-sub">{period.time}</span>
                   </td>
 
-                  {/* 5 Mon-Fri Weekday Cells */}
-                  {weekDays.map(dayObj => {
+                  {/* Day Cells */}
+                  {activeDaysList.map(dayObj => {
                     const key = `${activeRoomId}_${dayObj.dateStr}_${period.id}`;
                     const resItem = reservations[key];
                     const hasReservation = resItem && resItem.text && resItem.text.trim();
@@ -255,7 +350,6 @@ export function CalendarView({
                       <td
                         key={dayObj.dateStr}
                         className={cellClasses}
-                        style={{ height: '72px' }}
                         onMouseEnter={() => {
                           setHoveredRow(period.id);
                           setHoveredCol(dayObj.dateStr);
@@ -279,7 +373,7 @@ export function CalendarView({
         </table>
       </div>
 
-      {/* Overwrite Confirmation Modal (EXACT 2 BUTTONS) */}
+      {/* 4. EXACT 2 BUTTONS Overwrite Confirmation Modal + Direct Delete Button */}
       {overwriteTarget && (
         <div className="modal-overlay" onClick={handleConfirmOverwriteNo}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -297,11 +391,12 @@ export function CalendarView({
               </span>
             </div>
 
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
               선택 일시: {overwriteTarget.dateStr} ({PERIODS.find(p => p.id === overwriteTarget.periodId)?.name})
             </p>
 
-            <div className="exact-two-buttons">
+            {/* 2개 지정 버튼 */}
+            <div className="exact-two-buttons" style={{ marginBottom: '0.75rem' }}>
               <button
                 className="btn-modal-action btn-confirm-yes"
                 onClick={handleConfirmOverwriteYes}
@@ -315,11 +410,23 @@ export function CalendarView({
                 아니오, 변경하지 않겠습니다
               </button>
             </div>
+
+            {/* 기존 일정 즉시 삭제 버튼 */}
+            <div style={{ textAlign: 'center', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
+              <button
+                className="btn"
+                onClick={handleDirectDeleteFromWarning}
+                style={{ width: '100%', backgroundColor: '#fef2f2', borderColor: '#fca5a5', color: '#991b1b', fontWeight: '700' }}
+              >
+                <Trash2 size={16} />
+                <span>기존 예약 일정 바로 삭제하기</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Free Text Input / Edit Modal */}
+      {/* 5. Free Text Input / Edit Modal with Delete Option */}
       {editTarget && (
         <div className="modal-overlay" onClick={() => setEditTarget(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -362,11 +469,11 @@ export function CalendarView({
                   <button
                     type="button"
                     className="btn"
-                    style={{ backgroundColor: '#fef2f2', borderColor: '#fca5a5', color: '#991b1b' }}
+                    style={{ backgroundColor: '#fef2f2', borderColor: '#fca5a5', color: '#991b1b', fontWeight: '700' }}
                     onClick={handleDelete}
                   >
                     <Trash2 size={16} />
-                    <span>예약 삭제</span>
+                    <span>예약 일정 삭제</span>
                   </button>
                 )}
                 <button type="button" className="btn" onClick={() => setEditTarget(null)}>

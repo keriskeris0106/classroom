@@ -29,6 +29,15 @@ export const PERIODS = [
 export const SEMESTER_START_DATE = '2026-08-17';
 export const SEMESTER_END_DATE = '2027-01-08';
 
+export const MONTHS = [
+  { year: 2026, month: 8, label: '2026년 8월' },
+  { year: 2026, month: 9, label: '2026년 9월' },
+  { year: 2026, month: 10, label: '2026년 10월' },
+  { year: 2026, month: 11, label: '2026년 11월' },
+  { year: 2026, month: 12, label: '2026년 12월' },
+  { year: 2027, month: 1, label: '2027년 1월' },
+];
+
 export const WEEKDAYS_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
 // 대한민국 표준시 (KST) 날짜 구하기 Helper
@@ -59,9 +68,7 @@ export function getWeekDaysMonToFri(targetDateStr) {
   const dateObj = new Date(targetDateStr);
   const dayOfWeek = dateObj.getDay(); // 0(일)~6(토)
   
-  // 월요일과의 차이 (월요일 = 1)
   const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  
   const monday = new Date(dateObj);
   monday.setDate(dateObj.getDate() + diffToMon);
 
@@ -82,4 +89,28 @@ export function getWeekDaysMonToFri(targetDateStr) {
     });
   }
   return weekDays;
+}
+
+// 선택한 월(month)의 모든 평일(월~금) 날짜 리스트 생성
+export function getMonthWeekdays(year, month) {
+  const daysInMonthCount = new Date(year, month, 0).getDate();
+  const list = [];
+  for (let day = 1; day <= daysInMonthCount; day++) {
+    const d = new Date(year, month - 1, day);
+    const dayOfWeek = d.getDay();
+    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+      const mm = String(month).padStart(2, '0');
+      const dd = String(day).padStart(2, '0');
+      const dateStr = `${year}-${mm}-${dd}`;
+      if (dateStr >= SEMESTER_START_DATE && dateStr <= SEMESTER_END_DATE) {
+        list.push({
+          dateStr,
+          dayNumber: day,
+          month,
+          weekdayName: WEEKDAYS_KO[dayOfWeek]
+        });
+      }
+    }
+  }
+  return list;
 }
