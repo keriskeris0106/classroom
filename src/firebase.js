@@ -6,8 +6,8 @@ const PUBLIC_CLOUD_SYNC_ENDPOINT = 'https://jsonblob.com/api/jsonBlob/019fabc2-d
 const DEFAULT_FIREBASE_DATABASE_URL = import.meta.env.VITE_FIREBASE_DATABASE_URL || '';
 
 const LOCAL_STORAGE_KEY_FIREBASE = 'classroom_firebase_config';
-const LOCAL_STORAGE_KEY_RESERVATIONS = 'classroom_master_reservations_v9';
-const LOCAL_STORAGE_KEY_HISTORY = 'classroom_master_history_v9';
+const LOCAL_STORAGE_KEY_RESERVATIONS = 'classroom_master_reservations_v10';
+const LOCAL_STORAGE_KEY_HISTORY = 'classroom_master_history_v10';
 
 export function getSavedFirebaseConfig() {
   try {
@@ -63,7 +63,7 @@ initFirebase();
 // 탭/창 간 로컬 동기화 채널
 let broadcastChannel = null;
 if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-  broadcastChannel = new BroadcastChannel('classroom_realtime_sync_v9');
+  broadcastChannel = new BroadcastChannel('classroom_realtime_sync_v10');
 }
 
 // 1. 60명 전 교사 기기 무새로고침(Zero-F5) 100% 실시간 구독 (생성/수정/삭제 전 기기 즉시 동기화)
@@ -96,7 +96,7 @@ export function subscribeToReservations(onUpdate) {
     }
   }
 
-  // 1-3. 전 세계 기기 1초 주기 실시간 클라우드 동기화 (기기 A ➡️ 기기 B 무새로고침 자동 반영)
+  // 1-3. 전 세계 기기 0.8초 주기 실시간 캐시방지 클라우드 동기화 (기기 A ➡️ 기기 B 무새로고침 즉시 반영)
   const fetchCloudReservations = async () => {
     if (!isSubscribed) return;
     try {
@@ -104,7 +104,10 @@ export function subscribeToReservations(onUpdate) {
       // 커스텀 파이어베이스 REST
       if (cfg.databaseURL) {
         const rawUrl = cfg.databaseURL.replace(/\/$/, '');
-        const res = await fetch(`${rawUrl}/reservations.json`).catch(() => null);
+        const res = await fetch(`${rawUrl}/reservations.json?t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+        }).catch(() => null);
         if (res && res.ok) {
           const data = await res.json();
           if (isSubscribed) {
@@ -116,8 +119,12 @@ export function subscribeToReservations(onUpdate) {
         }
       }
 
-      // 공용 실시간 클라우드 동기화 엔드포인트
-      const cloudRes = await fetch(PUBLIC_CLOUD_SYNC_ENDPOINT).catch(() => null);
+      // 공용 실시간 클라우드 동기화 엔드포인트 (HTTP 브라우저/CDN 캐시 우회)
+      const cloudRes = await fetch(`${PUBLIC_CLOUD_SYNC_ENDPOINT}?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+      }).catch(() => null);
+
       if (cloudRes && cloudRes.ok) {
         const json = await cloudRes.json();
         if (json && isSubscribed) {
@@ -132,7 +139,7 @@ export function subscribeToReservations(onUpdate) {
   };
 
   fetchCloudReservations();
-  const pollInterval = setInterval(fetchCloudReservations, 1000);
+  const pollInterval = setInterval(fetchCloudReservations, 800);
 
   // 1-4. 동일 기기 멀티 탭/창 브로드캐스트 이벤트
   const notifyLocal = () => {
@@ -202,7 +209,10 @@ export function subscribeToHistory(onUpdate) {
       const cfg = getSavedFirebaseConfig();
       if (cfg.databaseURL) {
         const rawUrl = cfg.databaseURL.replace(/\/$/, '');
-        const res = await fetch(`${rawUrl}/history.json`).catch(() => null);
+        const res = await fetch(`${rawUrl}/history.json?t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+        }).catch(() => null);
         if (res && res.ok) {
           const dataObj = await res.json();
           if (dataObj && isSubscribed) {
@@ -217,7 +227,11 @@ export function subscribeToHistory(onUpdate) {
         }
       }
 
-      const cloudRes = await fetch(PUBLIC_CLOUD_SYNC_ENDPOINT).catch(() => null);
+      const cloudRes = await fetch(`${PUBLIC_CLOUD_SYNC_ENDPOINT}?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+      }).catch(() => null);
+
       if (cloudRes && cloudRes.ok) {
         const json = await cloudRes.json();
         if (json && json.history && isSubscribed) {
@@ -232,7 +246,7 @@ export function subscribeToHistory(onUpdate) {
   };
 
   fetchCloudHistory();
-  const pollInterval = setInterval(fetchCloudHistory, 1000);
+  const pollInterval = setInterval(fetchCloudHistory, 800);
 
   const notifyLocal = () => {
     const cached = getLocalHistory();
@@ -338,8 +352,8 @@ export async function saveReservation(roomId, dateStr, periodId, text, oldText =
   }
   window.dispatchEvent(new CustomEvent('classroom_data_change'));
 
-  // 2. 클라우드 파이어베이스 원격 전송
-  syncToCloud(key, resItem, updatedCache, newHistItem, updatedHistory);
+  // 2. 클라우드 파이어베이스 원격 동시 전송 (완료 대기)
+  await syncToCloud(key, resItem, updatedCache, newHistItem, updatedHistory);
 
   return updatedCache;
 }
@@ -382,7 +396,7 @@ export async function batchSaveReservations(reservationsArray, batchLogText) {
   }
   window.dispatchEvent(new CustomEvent('classroom_data_change'));
 
-  syncToCloud(null, null, updatedCache, newHistItem, updatedHistory);
+  await syncToCloud(null, null, updatedCache, newHistItem, updatedHistory);
 
   return updatedCache;
 }
@@ -452,7 +466,10 @@ async function syncToCloud(singleKey, singleResItem, fullReservationsMap, newHis
   try {
     await fetch(PUBLIC_CLOUD_SYNC_ENDPOINT, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache'
+      },
       body: JSON.stringify({
         reservations: fullReservationsMap,
         history: fullHistoryList.slice(0, 200)
@@ -501,6 +518,7 @@ function periodIdName(pid) {
 export function isFirebaseConnected() {
   return true;
 }
+
 
 
 
