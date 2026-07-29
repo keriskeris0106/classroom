@@ -13,8 +13,8 @@ export function CalendarView({
   // Calendar View Mode: 'month' (한 달 전체 보기) vs 'week' (주차별 보기)
   const [viewMode, setViewMode] = useState('month');
 
-  // Month View State: Year and Month
-  const initialDateObj = new Date(currentWeekDate);
+  // Month View State (기본 2026년 8월 즉시 로딩)
+  const initialDateObj = new Date(currentWeekDate || '2026-08-17');
   const [selectedYear, setSelectedYear] = useState(initialDateObj.getFullYear() || 2026);
   const [selectedMonth, setSelectedMonth] = useState(initialDateObj.getMonth() + 1 || 8);
 
@@ -76,7 +76,7 @@ export function CalendarView({
     }
   };
 
-  // 오늘 날짜로 자동 이동
+  // 오늘 날짜로 자동 이동 (한달 전체보기 & 주차별 보기 모두 지원)
   const handleGoToday = () => {
     handleDateTeleport(kstToday);
   };
@@ -87,7 +87,6 @@ export function CalendarView({
     const existing = reservations[key] ? reservations[key].text : '';
 
     if (existing && existing.trim()) {
-      // 이미 예약된 칸 -> 딱 2개 버튼 경고 팝업
       setOverwriteTarget({
         roomId: activeRoomId,
         dateStr,
@@ -95,7 +94,6 @@ export function CalendarView({
         existingText: existing.trim()
       });
     } else {
-      // 빈 셀 -> 입력 팝업
       setEditTarget({
         roomId: activeRoomId,
         dateStr,
@@ -120,7 +118,7 @@ export function CalendarView({
     setOverwriteTarget(null);
   };
 
-  // 경고 팝업에서 즉시 일정 삭제
+  // 경고 팝업에서 기존 일정 바로 삭제
   const handleDirectDeleteFromWarning = () => {
     if (!overwriteTarget) return;
     onSaveReservation(
@@ -168,7 +166,7 @@ export function CalendarView({
 
   return (
     <section className="calendar-section" style={{ width: '100%' }}>
-      {/* 1. Room Selector Bar */}
+      {/* 1. Special Room Tab Selector */}
       <div style={{ background: '#fafafa', borderBottom: '1px solid var(--border-color)', padding: '0.5rem 1rem' }} className="no-print">
         <div style={{ display: 'flex', gap: '0.35rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
           {SPECIAL_ROOMS.map(room => (
@@ -185,7 +183,7 @@ export function CalendarView({
         </div>
       </div>
 
-      {/* 2. Control Bar: Mode Toggle + Month Buttons + Teleport Date Search + Today Jump */}
+      {/* 2. Controls Bar: View Mode Switcher + Month Selector + Teleport Date Search + Today Jump */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -196,7 +194,7 @@ export function CalendarView({
         flexWrap: 'wrap',
         gap: '0.75rem'
       }} className="no-print">
-        {/* Active Room Title */}
+        {/* Active Room Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
           <span style={{ fontSize: '1.5rem' }}>{roomObj.icon}</span>
           <div>
@@ -207,7 +205,7 @@ export function CalendarView({
           </div>
         </div>
 
-        {/* View Mode Toggle: [📅 한달 전체 보기] vs [🗓️ 주차별 보기] */}
+        {/* View Mode Switcher: [📅 한달 전체 보기] vs [🗓️ 주차별 보기] */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: '#f1f5f9', padding: '0.2rem', borderRadius: '8px' }}>
           <button
             className={`btn ${viewMode === 'month' ? 'btn-primary' : ''}`}
@@ -227,7 +225,7 @@ export function CalendarView({
           </button>
         </div>
 
-        {/* Month Selector buttons for Month View */}
+        {/* Month Selector for Month View */}
         {viewMode === 'month' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
             {MONTHS.map(m => (
@@ -258,7 +256,7 @@ export function CalendarView({
           </div>
         )}
 
-        {/* Date Teleport Picker & Today Jump */}
+        {/* Date Teleport Picker & Today Jump (한달/주차별 모두 지원) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
             <Search size={15} color="#64748b" />
@@ -285,7 +283,7 @@ export function CalendarView({
         </div>
       </div>
 
-      {/* 3. Grid Table */}
+      {/* 3. High-Readability Matrix Table with Friday Borders & 8.17 월 Date Header */}
       <div style={{ overflowX: 'auto', width: '100%' }}>
         <table className="grid-table" onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
           <thead>
@@ -293,21 +291,21 @@ export function CalendarView({
               <th className="period-header-th" style={{ width: '130px' }}>교시 \ 날짜</th>
               {activeDaysList.map(dayObj => {
                 const isToday = dayObj.dateStr === kstToday;
+                const isFriday = dayObj.isFriday;
+
                 return (
                   <th
                     key={dayObj.dateStr}
                     className={`date-header-th ${isToday ? 'today-column' : ''}`}
+                    style={{
+                      borderRight: (viewMode === 'month' && isFriday) ? '3px solid #64748b' : undefined,
+                      padding: '0.5rem 0.25rem'
+                    }}
                   >
                     <div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        {dayObj.month}월
-                      </span>
-                      <br />
-                      <span style={{ fontSize: '1.15rem', fontWeight: '900' }}>
-                        {dayObj.dayNumber}일
-                      </span>
-                      <span style={{ fontSize: '0.85rem', fontWeight: '800', marginLeft: '0.2rem', color: 'var(--brand-indigo)' }}>
-                        ({dayObj.weekdayName})
+                      {/* 간결한 날짜표기: 예) 8.17 월 */}
+                      <span style={{ fontSize: '0.95rem', fontWeight: '800', color: isToday ? 'var(--brand-indigo)' : 'var(--text-primary)' }}>
+                        {dayObj.displayLabel || `${dayObj.month}.${dayObj.dayNumber} ${dayObj.weekdayName}`}
                       </span>
                     </div>
                     {isToday && <span className="today-tag">TODAY</span>}
@@ -329,7 +327,7 @@ export function CalendarView({
                     <span className="period-time-sub">{period.time}</span>
                   </td>
 
-                  {/* Day Cells */}
+                  {/* Day Cells with Friday thick vertical border */}
                   {activeDaysList.map(dayObj => {
                     const key = `${activeRoomId}_${dayObj.dateStr}_${period.id}`;
                     const resItem = reservations[key];
@@ -338,6 +336,7 @@ export function CalendarView({
                     const isColHovered = hoveredCol === dayObj.dateStr;
                     const isTargetCell = isRowHovered && isColHovered;
                     const isToday = dayObj.dateStr === kstToday;
+                    const isFriday = dayObj.isFriday;
 
                     let cellClasses = 'reservation-cell';
                     if (isTargetCell) cellClasses += ' crosshair-target';
@@ -350,6 +349,9 @@ export function CalendarView({
                       <td
                         key={dayObj.dateStr}
                         className={cellClasses}
+                        style={{
+                          borderRight: (viewMode === 'month' && isFriday) ? '3px solid #64748b' : undefined
+                        }}
                         onMouseEnter={() => {
                           setHoveredRow(period.id);
                           setHoveredCol(dayObj.dateStr);
@@ -373,7 +375,7 @@ export function CalendarView({
         </table>
       </div>
 
-      {/* 4. EXACT 2 BUTTONS Overwrite Confirmation Modal + Direct Delete Button */}
+      {/* EXACT 2 BUTTONS Overwrite Confirmation Modal + Direct Delete Button */}
       {overwriteTarget && (
         <div className="modal-overlay" onClick={handleConfirmOverwriteNo}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -395,7 +397,6 @@ export function CalendarView({
               선택 일시: {overwriteTarget.dateStr} ({PERIODS.find(p => p.id === overwriteTarget.periodId)?.name})
             </p>
 
-            {/* 2개 지정 버튼 */}
             <div className="exact-two-buttons" style={{ marginBottom: '0.75rem' }}>
               <button
                 className="btn-modal-action btn-confirm-yes"
@@ -411,7 +412,6 @@ export function CalendarView({
               </button>
             </div>
 
-            {/* 기존 일정 즉시 삭제 버튼 */}
             <div style={{ textAlign: 'center', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
               <button
                 className="btn"
@@ -426,7 +426,7 @@ export function CalendarView({
         </div>
       )}
 
-      {/* 5. Free Text Input / Edit Modal with Delete Option */}
+      {/* Free Text Input / Edit Modal with Delete Option */}
       {editTarget && (
         <div className="modal-overlay" onClick={() => setEditTarget(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>

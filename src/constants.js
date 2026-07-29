@@ -63,7 +63,7 @@ export function formatKSTTimestamp(dateObj = new Date()) {
   return `${month}.${day} ${hours}:${minutes}:${seconds}`;
 }
 
-// 주차 계산 Helper: 지정한 날짜가 속한 주(월~금)의 5개 날짜 객체 배열 반환
+// 주차 계산 Helper (월~금 5일)
 export function getWeekDaysMonToFri(targetDateStr) {
   const dateObj = new Date(targetDateStr);
   const dayOfWeek = dateObj.getDay(); // 0(일)~6(토)
@@ -85,7 +85,8 @@ export function getWeekDaysMonToFri(targetDateStr) {
       dayNumber: d.getDate(),
       month: d.getMonth() + 1,
       weekdayName: WEEKDAYS_KO[i + 1],
-      isWithinSemester: dateStr >= SEMESTER_START_DATE && dateStr <= SEMESTER_END_DATE
+      isFriday: i === 4,
+      displayLabel: `${d.getMonth() + 1}.${d.getDate()} ${WEEKDAYS_KO[i + 1]}`
     });
   }
   return weekDays;
@@ -107,7 +108,9 @@ export function getMonthWeekdays(year, month) {
           dateStr,
           dayNumber: day,
           month,
-          weekdayName: WEEKDAYS_KO[dayOfWeek]
+          weekdayName: WEEKDAYS_KO[dayOfWeek],
+          isFriday: dayOfWeek === 5, // 금요일 여부 (구분선 표시용)
+          displayLabel: `${month}.${day} ${WEEKDAYS_KO[dayOfWeek]}`
         });
       }
     }

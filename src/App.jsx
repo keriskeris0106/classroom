@@ -19,24 +19,23 @@ import { RecurringModal } from './components/RecurringModal';
 export default function App() {
   const kstToday = getKSTTodayString();
 
-  // 4 Main Top Tabs: 'home' | 'reservation' | 'dashboard' | 'history'
+  // 4 Main Top-level Tabs: 'home' | 'reservation' | 'dashboard' | 'history'
   const [currentTab, setCurrentTab] = useState('home');
   // Active Room ID in Calendar View
   const [activeRoomId, setActiveRoomId] = useState(SPECIAL_ROOMS[0].id);
-  // Current Active Week Date
+  // Current Active Week Date (default KST Today or 2026-08-17)
   const [currentWeekDate, setCurrentWeekDate] = useState(kstToday);
   // Selected Dashboard Date
   const [selectedDashboardDate, setSelectedDashboardDate] = useState(kstToday);
 
-  // Real-time Data States (Firestore + Realtime DB + Local)
+  // Real-time Data States (Persistent Local + EventBus + Firestore + Realtime DB)
   const [reservations, setReservations] = useState(getLocalReservations());
   const [historyLogs, setHistoryLogs] = useState([]);
-  const [isConnected, setIsConnected] = useState(checkFirebaseConnected());
 
   // Recurring Modal State
   const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
 
-  // Subscribe to Realtime Data Stream across 60+ Teachers
+  // Subscribe to Realtime Data Stream across 60+ Teachers with zero F5 lag
   useEffect(() => {
     const unsubReservations = subscribeToReservations((val) => {
       setReservations(val || {});
@@ -46,13 +45,11 @@ export default function App() {
       setHistoryLogs(list || []);
     });
 
-    setIsConnected(checkFirebaseConnected());
-
     return () => {
       if (typeof unsubReservations === 'function') unsubReservations();
       if (typeof unsubHistory === 'function') unsubHistory();
     };
-  }, [isConnected]);
+  }, []);
 
   // Home Screen Room Selector Click
   const handleSelectRoomFromHome = (roomId) => {
@@ -60,7 +57,7 @@ export default function App() {
     setCurrentTab('reservation');
   };
 
-  // Single Reservation Save / Edit / Delete with Instant UI Updates
+  // Single Reservation Save / Edit / Delete with Instant Local & Remote Event Update
   const handleSaveReservation = async (roomId, dateStr, periodId, text, oldText) => {
     try {
       const updatedMap = await saveReservation(roomId, dateStr, periodId, text, oldText);
@@ -80,7 +77,7 @@ export default function App() {
       if (updatedMap) {
         setReservations({ ...updatedMap });
       }
-      alert(`🎉 총 ${itemsArray.length}개의 반복 예약이 성공적으로 일괄 등록되었습니다!`);
+      alert(`🎉 총 ${itemsArray.length}개의 시간대에 성공적으로 일괄 등록되었습니다!`);
     } catch (err) {
       console.error('Error batch saving:', err);
       alert('반복 예약 일괄 저장 중 오류가 발생했습니다: ' + err.message);
@@ -108,8 +105,6 @@ export default function App() {
         {currentTab === 'home' && (
           <HomeView
             onSelectRoom={handleSelectRoomFromHome}
-            onNavigateTab={(tab) => setCurrentTab(tab)}
-            onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
           />
         )}
 
@@ -145,6 +140,7 @@ export default function App() {
         onClose={() => setIsRecurringModalOpen(false)}
         onBatchSave={handleBatchSave}
         defaultRoomId={activeRoomId}
+        currentReservations={reservations}
       />
     </div>
   );

@@ -1,12 +1,10 @@
 import React from 'react';
-import { Home, Calendar, LayoutDashboard, History, Repeat, Printer, Settings, Wifi, WifiOff } from 'lucide-react';
+import { Home, Calendar, LayoutDashboard, History, Repeat, Printer } from 'lucide-react';
 
 export function Header({
   currentTab,
   setCurrentTab,
-  onOpenRecurringModal,
-  onOpenFirebaseModal,
-  isFirebaseConnected
+  onOpenRecurringModal
 }) {
   const handlePrint = () => {
     window.print();
@@ -14,9 +12,8 @@ export function Header({
 
   return (
     <header className="navbar no-print">
-      {/* Top Bar: Brand + Navigation Tabs + Quick Actions */}
-      <div className="nav-top-bar" style={{ padding: '0.65rem 1.5rem' }}>
-        {/* Brand Title */}
+      <div className="nav-top-bar" style={{ padding: '0.6rem 1.5rem' }}>
+        {/* Brand Logo & Title */}
         <div
           className="brand-section"
           style={{ cursor: 'pointer' }}
@@ -31,7 +28,7 @@ export function Header({
           </div>
         </div>
 
-        {/* 4 Main Tabs */}
+        {/* 4 Sleek Top-level Navigation Tabs */}
         <nav style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#f1f5f9', padding: '0.25rem', borderRadius: '10px' }}>
           <button
             className={`btn ${currentTab === 'home' ? 'btn-primary' : ''}`}
@@ -70,40 +67,15 @@ export function Header({
           </button>
         </nav>
 
-        {/* Actions & Connection Badge */}
+        {/* Action Controls */}
         <div className="nav-actions">
-          {/* Connection Status Badge */}
-          <button
-            onClick={onOpenFirebaseModal}
-            className="btn"
-            title="파이어베이스 실시간 연동 상태 설정"
-            style={{
-              borderColor: isFirebaseConnected ? '#22c55e' : '#f59e0b',
-              backgroundColor: isFirebaseConnected ? '#f0fdf4' : '#fffbeb',
-              color: isFirebaseConnected ? '#15803d' : '#b45309',
-              fontSize: '0.8rem'
-            }}
-          >
-            {isFirebaseConnected ? (
-              <>
-                <Wifi size={15} />
-                <span>파이어베이스 연동 중</span>
-              </>
-            ) : (
-              <>
-                <WifiOff size={15} />
-                <span>자동 실시간 연동 (설정)</span>
-              </>
-            )}
-          </button>
-
-          {/* Recurring Reservation */}
+          {/* Recurring Reservation Button */}
           <button className="btn btn-warning" onClick={onOpenRecurringModal}>
             <Repeat size={15} />
             <span>반복 예약</span>
           </button>
 
-          {/* Print */}
+          {/* Print Button */}
           <button className="btn" onClick={handlePrint}>
             <Printer size={15} />
             <span>인쇄</span>
