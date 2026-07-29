@@ -43,7 +43,7 @@ export default function App() {
   useEffect(() => {
     const unsubReservations = subscribeToReservations((val) => {
       if (val) {
-        setReservations(prev => ({ ...prev, ...val }));
+        setReservations({ ...val });
       }
     });
 

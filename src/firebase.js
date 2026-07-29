@@ -6,8 +6,8 @@ const PUBLIC_CLOUD_SYNC_ENDPOINT = 'https://jsonblob.com/api/jsonBlob/019fabc2-d
 const DEFAULT_FIREBASE_DATABASE_URL = import.meta.env.VITE_FIREBASE_DATABASE_URL || '';
 
 const LOCAL_STORAGE_KEY_FIREBASE = 'classroom_firebase_config';
-const LOCAL_STORAGE_KEY_RESERVATIONS = 'classroom_master_reservations_v8';
-const LOCAL_STORAGE_KEY_HISTORY = 'classroom_master_history_v8';
+const LOCAL_STORAGE_KEY_RESERVATIONS = 'classroom_master_reservations_v9';
+const LOCAL_STORAGE_KEY_HISTORY = 'classroom_master_history_v9';
 
 export function getSavedFirebaseConfig() {
   try {
@@ -29,11 +29,9 @@ export function getSavedFirebaseConfig() {
 
 let firebaseApp = null;
 let firebaseDb = null;
-let isInitialized = false;
 
 export function initFirebase(configOverride) {
   const cfg = configOverride || getSavedFirebaseConfig();
-  isInitialized = true;
 
   if (!cfg || !cfg.databaseURL) {
     return true; // 공용 클라우드 동기화 엔진 활성화 상태 유지
@@ -65,10 +63,10 @@ initFirebase();
 // 탭/창 간 로컬 동기화 채널
 let broadcastChannel = null;
 if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-  broadcastChannel = new BroadcastChannel('classroom_realtime_sync_v8');
+  broadcastChannel = new BroadcastChannel('classroom_realtime_sync_v9');
 }
 
-// 1. 60명 전 교사 기기 무새로고침(Zero-F5) 100% 실시간 구독 (전 기기/브라우저 동기화)
+// 1. 60명 전 교사 기기 무새로고침(Zero-F5) 100% 실시간 구독 (생성/수정/삭제 전 기기 즉시 동기화)
 export function subscribeToReservations(onUpdate) {
   let isSubscribed = true;
 
@@ -85,13 +83,9 @@ export function subscribeToReservations(onUpdate) {
         reservationsRef,
         (snapshot) => {
           if (!isSubscribed) return;
-          const dataMap = snapshot.val();
-          if (dataMap) {
-            const currentLocal = getLocalReservations();
-            const merged = { ...currentLocal, ...dataMap };
-            localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(merged));
-            onUpdate(merged);
-          }
+          const dataMap = snapshot.val() || {};
+          localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(dataMap));
+          onUpdate(dataMap);
         },
         (err) => {
           console.warn('[Firebase RTDB Listener Warning]:', err);
@@ -113,11 +107,10 @@ export function subscribeToReservations(onUpdate) {
         const res = await fetch(`${rawUrl}/reservations.json`).catch(() => null);
         if (res && res.ok) {
           const data = await res.json();
-          if (data && isSubscribed) {
-            const currentLocal = getLocalReservations();
-            const merged = { ...currentLocal, ...data };
-            localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(merged));
-            onUpdate(merged);
+          if (isSubscribed) {
+            const validData = data || {};
+            localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(validData));
+            onUpdate(validData);
             return;
           }
         }
@@ -127,11 +120,10 @@ export function subscribeToReservations(onUpdate) {
       const cloudRes = await fetch(PUBLIC_CLOUD_SYNC_ENDPOINT).catch(() => null);
       if (cloudRes && cloudRes.ok) {
         const json = await cloudRes.json();
-        if (json && json.reservations && isSubscribed) {
-          const currentLocal = getLocalReservations();
-          const merged = { ...currentLocal, ...json.reservations };
-          localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(merged));
-          onUpdate(merged);
+        if (json && isSubscribed) {
+          const resData = json.reservations || {};
+          localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(resData));
+          onUpdate(resData);
         }
       }
     } catch (e) {
@@ -432,6 +424,10 @@ async function syncToCloud(singleKey, singleResItem, fullReservationsMap, newHis
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(singleResItem)
         });
+      } else if (singleKey && singleResItem === null) {
+        await fetch(`${rawUrl}/reservations/${singleKey}.json`, {
+          method: 'DELETE'
+        });
       } else if (fullReservationsMap) {
         await fetch(`${rawUrl}/reservations.json`, {
           method: 'PUT',
@@ -505,5 +501,6 @@ function periodIdName(pid) {
 export function isFirebaseConnected() {
   return true;
 }
+
 
 
