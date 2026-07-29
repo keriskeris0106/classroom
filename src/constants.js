@@ -29,21 +29,11 @@ export const PERIODS = [
 export const SEMESTER_START_DATE = '2026-08-17';
 export const SEMESTER_END_DATE = '2027-01-08';
 
-export const MONTHS = [
-  { year: 2026, month: 8, label: '2026년 8월' },
-  { year: 2026, month: 9, label: '2026년 9월' },
-  { year: 2026, month: 10, label: '2026년 10월' },
-  { year: 2026, month: 11, label: '2026년 11월' },
-  { year: 2026, month: 12, label: '2026년 12월' },
-  { year: 2027, month: 1, label: '2027년 1월' },
-];
-
 export const WEEKDAYS_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
 // 대한민국 표준시 (KST) 날짜 구하기 Helper
 export function getKSTTodayString() {
   const now = new Date();
-  // Adjust to UTC+9 KST
   const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
   const kstTime = new Date(utc + (3600000 * 9));
   
@@ -62,4 +52,34 @@ export function formatKSTTimestamp(dateObj = new Date()) {
   const minutes = String(kst.getMinutes()).padStart(2, '0');
   const seconds = String(kst.getSeconds()).padStart(2, '0');
   return `${month}.${day} ${hours}:${minutes}:${seconds}`;
+}
+
+// 주차 계산 Helper: 지정한 날짜가 속한 주(월~금)의 5개 날짜 객체 배열 반환
+export function getWeekDaysMonToFri(targetDateStr) {
+  const dateObj = new Date(targetDateStr);
+  const dayOfWeek = dateObj.getDay(); // 0(일)~6(토)
+  
+  // 월요일과의 차이 (월요일 = 1)
+  const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  
+  const monday = new Date(dateObj);
+  monday.setDate(dateObj.getDate() + diffToMon);
+
+  const weekDays = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    weekDays.push({
+      dateStr,
+      dayNumber: d.getDate(),
+      month: d.getMonth() + 1,
+      weekdayName: WEEKDAYS_KO[i + 1],
+      isWithinSemester: dateStr >= SEMESTER_START_DATE && dateStr <= SEMESTER_END_DATE
+    });
+  }
+  return weekDays;
 }

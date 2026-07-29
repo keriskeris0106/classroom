@@ -1,60 +1,63 @@
 import React, { useState } from 'react';
-import { PERIODS, WEEKDAYS_KO, getKSTTodayString, SEMESTER_START_DATE, SEMESTER_END_DATE, SPECIAL_ROOMS } from '../constants';
-import { AlertTriangle, Check, Plus, Trash2, X } from 'lucide-react';
+import { SPECIAL_ROOMS, PERIODS, getKSTTodayString, getWeekDaysMonToFri, SEMESTER_START_DATE, SEMESTER_END_DATE } from '../constants';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertTriangle, Check, Trash2, X, Plus } from 'lucide-react';
 
 export function CalendarView({
   activeRoomId,
-  selectedYear,
-  selectedMonth,
+  setActiveRoomId,
+  currentWeekDate,
+  setCurrentWeekDate,
   reservations,
-  onSaveReservation,
-  searchDate
+  onSaveReservation
 }) {
-  const [hoveredRow, setHoveredRow] = useState(null); // period.id
-  const [hoveredCol, setHoveredCol] = useState(null); // date string 'YYYY-MM-DD'
+  const [hoveredRow, setHoveredRow] = useState(null); // periodId
+  const [hoveredCol, setHoveredCol] = useState(null); // dateStr 'YYYY-MM-DD'
 
-  // Overwrite Warning Modal State
+  // Overwrite Confirmation Modal State (Exact 2 Buttons)
   const [overwriteTarget, setOverwriteTarget] = useState(null); // { roomId, dateStr, periodId, existingText }
-  // Quick Edit Modal State
+  // Quick Free Text Edit Modal State
   const [editTarget, setEditTarget] = useState(null); // { roomId, dateStr, periodId, existingText }
   const [inputText, setInputText] = useState('');
 
   const kstToday = getKSTTodayString();
   const roomObj = SPECIAL_ROOMS.find(r => r.id === activeRoomId) || SPECIAL_ROOMS[0];
 
-  // Selected Month의 평일(월~금) 날짜 리스트 생성 (2026.08.17 ~ 2027.01.08 범위 제한)
-  const weekdaysInMonth = [];
-  const daysInMonthCount = new Date(selectedYear, selectedMonth, 0).getDate();
+  // 지정된 날짜 기준 월~금 5개 평일 날짜 배열 구하기
+  const weekDays = getWeekDaysMonToFri(currentWeekDate);
+  const monDateStr = weekDays[0].dateStr;
+  const friDateStr = weekDays[4].dateStr;
 
-  for (let day = 1; day <= daysInMonthCount; day++) {
-    const d = new Date(selectedYear, selectedMonth - 1, day);
-    const dayOfWeek = d.getDay();
-    // 평일만 추출 (월=1, 화=2, 수=3, 목=4, 금=5)
-    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-      const mm = String(selectedMonth).padStart(2, '0');
-      const dd = String(day).padStart(2, '0');
-      const dateStr = `${selectedYear}-${mm}-${dd}`;
-
-      // 2026.08.17 ~ 2027.01.08 학기 사용 기간 필터링
-      if (dateStr >= SEMESTER_START_DATE && dateStr <= SEMESTER_END_DATE) {
-        weekdaysInMonth.push({
-          dateStr,
-          dayNumber: day,
-          weekdayName: WEEKDAYS_KO[dayOfWeek],
-          isToday: dateStr === kstToday,
-          isSearchTarget: dateStr === searchDate
-        });
-      }
+  // 주차 이동 (이전주 / 다음주)
+  const handlePrevWeek = () => {
+    const d = new Date(monDateStr);
+    d.setDate(d.getDate() - 7);
+    const prevStr = d.toISOString().split('T')[0];
+    if (prevStr >= '2026-08-10') { // 2학기 준비 1주일 전까지 허용
+      setCurrentWeekDate(prevStr);
     }
-  }
+  };
 
-  // 셀 클릭 처리
+  const handleNextWeek = () => {
+    const d = new Date(monDateStr);
+    d.setDate(d.getDate() + 7);
+    const nextStr = d.toISOString().split('T')[0];
+    if (nextStr <= '2027-01-15') {
+      setCurrentWeekDate(nextStr);
+    }
+  };
+
+  // 오늘 날짜로 자동 이동 버튼 클릭
+  const handleGoToday = () => {
+    setCurrentWeekDate(kstToday);
+  };
+
+  // 셀 클릭
   const handleCellClick = (dateStr, periodId) => {
     const key = `${activeRoomId}_${dateStr}_${periodId}`;
     const existing = reservations[key] ? reservations[key].text : '';
 
     if (existing && existing.trim()) {
-      // 1. 이미 예약된 경우 -> 딱 2개 버튼 경고 팝업 생성
+      // 1. 이미 예약된 칸 -> 딱 2개 버튼 경고 팝업
       setOverwriteTarget({
         roomId: activeRoomId,
         dateStr,
@@ -62,7 +65,7 @@ export function CalendarView({
         existingText: existing.trim()
       });
     } else {
-      // 2. 빈 셀인 경우 -> 바로 입력창 생성
+      // 2. 빈 셀 -> 입력 팝업
       setEditTarget({
         roomId: activeRoomId,
         dateStr,
@@ -73,7 +76,7 @@ export function CalendarView({
     }
   };
 
-  // 경고 팝업에서 "네, 변경하겠습니다" 선택 시 -> 편집 창 활성화
+  // 경고 팝업: "네, 변경하겠습니다"
   const handleConfirmOverwriteYes = () => {
     if (overwriteTarget) {
       setEditTarget({ ...overwriteTarget });
@@ -82,7 +85,7 @@ export function CalendarView({
     }
   };
 
-  // 경고 팝업에서 "아니오, 변경하지 않겠습니다" 선택 시 -> 팝업 닫기
+  // 경고 팝업: "아니오, 변경하지 않겠습니다"
   const handleConfirmOverwriteNo = () => {
     setOverwriteTarget(null);
   };
@@ -91,6 +94,7 @@ export function CalendarView({
   const handleSave = (e) => {
     if (e) e.preventDefault();
     if (!editTarget) return;
+
     onSaveReservation(
       editTarget.roomId,
       editTarget.dateStr,
@@ -119,89 +123,139 @@ export function CalendarView({
   const periodObj = editTarget ? PERIODS.find(p => p.id === editTarget.periodId) : null;
 
   return (
-    <section className="calendar-section">
-      {/* Room Title Header */}
-      <div style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fafafa' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          <span style={{ fontSize: '1.4rem' }}>{roomObj.icon}</span>
-          <h2 style={{ fontSize: '1.15rem', fontWeight: '800' }}>
-            [{roomObj.name}] {selectedYear}년 {selectedMonth}월 예약 달력
-          </h2>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', background: 'white', padding: '0.2rem 0.6rem', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
-            📍 {roomObj.location}
-          </span>
-        </div>
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-          💡 십자선 마우스 호버 지원 | 총 {weekdaysInMonth.length}개 수업일
+    <section className="calendar-section" style={{ width: '100%' }}>
+      {/* 1. Room Tab Selector & Navigation */}
+      <div style={{ background: '#fafafa', borderBottom: '1px solid var(--border-color)', padding: '0.5rem 1rem' }}>
+        <div style={{ display: 'flex', gap: '0.35rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
+          {SPECIAL_ROOMS.map(room => (
+            <button
+              key={room.id}
+              className={`room-tab-btn ${activeRoomId === room.id ? 'active' : ''}`}
+              onClick={() => setActiveRoomId(room.id)}
+            >
+              <span>{room.icon}</span>
+              <span>{room.name}</span>
+              <span className="tab-badge-location">{room.location}</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Crosshair Grid Table */}
+      {/* 2. Weekly Navigation Bar & Today Button */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justify: 'space-between',
+        padding: '0.75rem 1.25rem',
+        background: 'var(--bg-surface)',
+        borderBottom: '1px solid var(--border-color)'
+      }}>
+        {/* Active Room Title */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <span style={{ fontSize: '1.5rem' }}>{roomObj.icon}</span>
+          <div>
+            <h2 style={{ fontSize: '1.2rem', fontWeight: '800' }}>
+              [{roomObj.name}] 주차별 예약 달력
+            </h2>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📍 {roomObj.location}</span>
+          </div>
+        </div>
+
+        {/* Week Navigator Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button className="btn" onClick={handlePrevWeek} title="이전주">
+            <ChevronLeft size={18} />
+            <span>이전주</span>
+          </button>
+
+          <div style={{ fontSize: '1rem', fontWeight: '800', background: '#f1f5f9', padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            📅 {monDateStr} (월) ~ {friDateStr} (금)
+          </div>
+
+          <button className="btn" onClick={handleNextWeek} title="다음주">
+            <span>다음주</span>
+            <ChevronRight size={18} />
+          </button>
+
+          {/* Today Button - Jump to Today */}
+          <button
+            className="btn"
+            onClick={handleGoToday}
+            style={{ fontWeight: '800', backgroundColor: '#eef2ff', borderColor: '#c7d2fe', color: '#4f46e5' }}
+          >
+            <CalendarIcon size={16} />
+            <span>오늘 ({kstToday}) 이동</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 3. High-Readability 5-Day Weekly Table */}
       <div style={{ overflowX: 'auto', width: '100%' }}>
-        <table className="grid-table" onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
+        <table className="grid-table" style={{ tableLayout: 'fixed' }} onMouseLeave={() => { setHoveredRow(null); setHoveredCol(null); }}>
           <thead>
             <tr>
-              <th className="period-header-th">교시 \ 날짜</th>
-              {weekdaysInMonth.map((dayObj) => (
-                <th
-                  key={dayObj.dateStr}
-                  className={`date-header-th ${dayObj.isToday ? 'today-column' : ''}`}
-                  style={{
-                    backgroundColor: dayObj.isSearchTarget ? '#e0e7ff' : undefined,
-                    borderLeft: dayObj.isSearchTarget ? '2px solid #4f46e5' : undefined,
-                    borderRight: dayObj.isSearchTarget ? '2px solid #4f46e5' : undefined
-                  }}
-                >
-                  <div>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {dayObj.dateStr.slice(5, 7)}월
-                    </span>
-                    <br />
-                    <span style={{ fontSize: '1.05rem', fontWeight: '800' }}>
-                      {dayObj.dayNumber}
-                    </span>
-                    <span style={{ fontSize: '0.8rem', fontWeight: '700', marginLeft: '0.2rem' }}>
-                      ({dayObj.weekdayName})
-                    </span>
-                  </div>
-                  {dayObj.isToday && <span className="today-tag">TODAY</span>}
-                </th>
-              ))}
+              <th className="period-header-th" style={{ width: '140px' }}>교시 \ 요일</th>
+              {weekDays.map(dayObj => {
+                const isToday = dayObj.dateStr === kstToday;
+                return (
+                  <th
+                    key={dayObj.dateStr}
+                    className={`date-header-th ${isToday ? 'today-column' : ''}`}
+                    style={{ width: '20%', padding: '0.75rem 0.5rem' }}
+                  >
+                    <div>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        {dayObj.month}월
+                      </span>
+                      <br />
+                      <span style={{ fontSize: '1.25rem', fontWeight: '900' }}>
+                        {dayObj.dayNumber}일
+                      </span>
+                      <span style={{ fontSize: '0.95rem', fontWeight: '800', marginLeft: '0.3rem', color: 'var(--brand-indigo)' }}>
+                        ({dayObj.weekdayName})
+                      </span>
+                    </div>
+                    {isToday && <span className="today-tag">TODAY</span>}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
 
           <tbody>
-            {PERIODS.map((period) => {
+            {PERIODS.map(period => {
               const isRowHovered = hoveredRow === period.id;
 
               return (
                 <tr key={period.id}>
-                  {/* Period Header Column */}
+                  {/* Period Header */}
                   <td className="period-cell">
                     {period.name}
                     <span className="period-time-sub">{period.time}</span>
                   </td>
 
-                  {/* Date Columns for this Period */}
-                  {weekdaysInMonth.map((dayObj) => {
+                  {/* 5 Mon-Fri Weekday Cells */}
+                  {weekDays.map(dayObj => {
                     const key = `${activeRoomId}_${dayObj.dateStr}_${period.id}`;
                     const resItem = reservations[key];
                     const hasReservation = resItem && resItem.text && resItem.text.trim();
 
                     const isColHovered = hoveredCol === dayObj.dateStr;
                     const isTargetCell = isRowHovered && isColHovered;
+                    const isToday = dayObj.dateStr === kstToday;
 
                     let cellClasses = 'reservation-cell';
                     if (isTargetCell) cellClasses += ' crosshair-target';
                     else if (isRowHovered) cellClasses += ' crosshair-row';
                     else if (isColHovered) cellClasses += ' crosshair-col';
 
-                    if (dayObj.isToday) cellClasses += ' today-column-cell';
+                    if (isToday) cellClasses += ' today-column-cell';
 
                     return (
                       <td
                         key={dayObj.dateStr}
                         className={cellClasses}
+                        style={{ height: '72px' }}
                         onMouseEnter={() => {
                           setHoveredRow(period.id);
                           setHoveredCol(dayObj.dateStr);
@@ -225,7 +279,7 @@ export function CalendarView({
         </table>
       </div>
 
-      {/* 1. EXACT 2 BUTTONS Overwrite Confirmation Modal */}
+      {/* Overwrite Confirmation Modal (EXACT 2 BUTTONS) */}
       {overwriteTarget && (
         <div className="modal-overlay" onClick={handleConfirmOverwriteNo}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -247,7 +301,6 @@ export function CalendarView({
               선택 일시: {overwriteTarget.dateStr} ({PERIODS.find(p => p.id === overwriteTarget.periodId)?.name})
             </p>
 
-            {/* User requirement: 딱 2개 버튼 ("네, 변경하겠습니다", "아니오, 변경하지 않겠습니다") */}
             <div className="exact-two-buttons">
               <button
                 className="btn-modal-action btn-confirm-yes"
@@ -266,7 +319,7 @@ export function CalendarView({
         </div>
       )}
 
-      {/* 2. Free Text Input / Edit Modal */}
+      {/* Free Text Input / Edit Modal */}
       {editTarget && (
         <div className="modal-overlay" onClick={() => setEditTarget(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
