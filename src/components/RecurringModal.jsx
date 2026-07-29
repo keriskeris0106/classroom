@@ -6,10 +6,10 @@ export function RecurringModal({ isOpen, onClose, onBatchSave, defaultRoomId, cu
   const kstToday = getKSTTodayString();
 
   const [roomId, setRoomId] = useState(defaultRoomId || SPECIAL_ROOMS[0].id);
-  // Weekdays (1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri)
-  const [selectedWeekdays, setSelectedWeekdays] = useState([3]); // default 수요일
-  // 7 Periods Checkboxes
-  const [selectedPeriodIds, setSelectedPeriodIds] = useState(['p3']); // default 3교시
+  // 반복 요일 (1=월, 2=화, 3=수, 4=목, 5=금)
+  const [selectedWeekdays, setSelectedWeekdays] = useState([3]); // 기본 수요일
+  // 7개 교시 체크박스
+  const [selectedPeriodIds, setSelectedPeriodIds] = useState(['p3']); // 기본 3교시
   
   const [startDate, setStartDate] = useState(
     kstToday >= SEMESTER_START_DATE && kstToday <= SEMESTER_END_DATE ? kstToday : SEMESTER_START_DATE
@@ -19,7 +19,7 @@ export function RecurringModal({ isOpen, onClose, onBatchSave, defaultRoomId, cu
   const [endDate, setEndDate] = useState(SEMESTER_END_DATE);
   const [reservationText, setReservationText] = useState('');
 
-  // Overwrite Warning State for Recurring Modal
+  // Overwrite Warning State
   const [overwriteWarningItems, setOverwriteWarningItems] = useState(null);
 
   if (!isOpen) return null;
@@ -44,21 +44,26 @@ export function RecurringModal({ isOpen, onClose, onBatchSave, defaultRoomId, cu
     }
   };
 
-  // 시작일부터 종료일까지 정확한 반복 날짜 계산
+  // 시작일부터 종료일까지 타임존 시프트 없는 정밀 반복 날짜 계산
   const calculateTargetReservations = () => {
     if (!startDate || !endDate || !reservationText.trim() || startDate > endDate) return [];
 
-    const items = [];
-    const current = new Date(startDate);
-    const endBoundary = new Date(endDate);
+    const [sY, sM, sD] = startDate.split('-').map(Number);
+    const [eY, eM, eD] = endDate.split('-').map(Number);
 
-    while (current <= endBoundary) {
-      const yyyy = current.getFullYear();
-      const mm = String(current.getMonth() + 1).padStart(2, '0');
-      const dd = String(current.getDate()).padStart(2, '0');
+    // 정오(12:00) 기준 Date 객체 생성으로 타임존 오차 전면 차단
+    let curr = new Date(sY, sM - 1, sD, 12, 0, 0);
+    const endLimit = new Date(eY, eM - 1, eD, 12, 0, 0);
+
+    const items = [];
+
+    while (curr <= endLimit) {
+      const yyyy = curr.getFullYear();
+      const mm = String(curr.getMonth() + 1).padStart(2, '0');
+      const dd = String(curr.getDate()).padStart(2, '0');
       const dateStr = `${yyyy}-${mm}-${dd}`;
 
-      const dayOfWeek = current.getDay(); // 0(일)~6(토)
+      const dayOfWeek = curr.getDay(); // 0(일), 1(월), 2(화), 3(수), 4(목), 5(금), 6(토)
 
       if (dateStr >= SEMESTER_START_DATE && dateStr <= SEMESTER_END_DATE) {
         if (selectedWeekdays.includes(dayOfWeek)) {
@@ -73,7 +78,8 @@ export function RecurringModal({ isOpen, onClose, onBatchSave, defaultRoomId, cu
         }
       }
 
-      current.setDate(current.getDate() + 1);
+      // 하루씩 증가
+      curr.setDate(curr.getDate() + 1);
     }
 
     return items;
@@ -81,7 +87,7 @@ export function RecurringModal({ isOpen, onClose, onBatchSave, defaultRoomId, cu
 
   const targetItems = calculateTargetReservations();
 
-  // 제출 처리 (덮어쓰기 검증)
+  // 제출 처리 (충돌 검사)
   const handleSubmit = (e) => {
     e.preventDefault();
     if (targetItems.length === 0) {
@@ -89,7 +95,7 @@ export function RecurringModal({ isOpen, onClose, onBatchSave, defaultRoomId, cu
       return;
     }
 
-    // 이미 예약된 슬롯이 존재하는지 검사
+    // 기존 예약과 충돌하는 항목 세기
     const existingConflictCount = targetItems.filter(item => {
       const key = `${item.roomId}_${item.date}_${item.periodId}`;
       const res = currentReservations ? currentReservations[key] : null;
@@ -97,10 +103,8 @@ export function RecurringModal({ isOpen, onClose, onBatchSave, defaultRoomId, cu
     }).length;
 
     if (existingConflictCount > 0) {
-      // 경고 팝업 표출
       setOverwriteWarningItems(targetItems);
     } else {
-      // 충돌 없음 -> 바로 저장
       executeBatchSave(targetItems);
     }
   };
@@ -212,7 +216,7 @@ export function RecurringModal({ isOpen, onClose, onBatchSave, defaultRoomId, cu
               </div>
             </div>
 
-            {/* 4. Start Date & End Date Direct Pickers */}
+            {/* 4. Start & End Date Pickers */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.35rem' }}>
@@ -231,7 +235,7 @@ export function RecurringModal({ isOpen, onClose, onBatchSave, defaultRoomId, cu
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '700', marginBottom: '0.35rem' }}>
-                  5. 종료일 직접 지정
+                  5. 종료일 선택
                 </label>
                 <input
                   type="date"

@@ -13,8 +13,8 @@ const DEFAULT_FIREBASE_CONFIG = {
 };
 
 const LOCAL_STORAGE_KEY_FIREBASE = 'classroom_firebase_config';
-const LOCAL_STORAGE_KEY_RESERVATIONS = 'classroom_reservations_persistent_v4';
-const LOCAL_STORAGE_KEY_HISTORY = 'classroom_history_persistent_v4';
+const LOCAL_STORAGE_KEY_RESERVATIONS = 'classroom_master_reservations_v5';
+const LOCAL_STORAGE_KEY_HISTORY = 'classroom_master_history_v5';
 
 export function getSavedFirebaseConfig() {
   try {
@@ -32,7 +32,7 @@ let firestoreDb = null;
 let broadcastChannel = null;
 
 if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-  broadcastChannel = new BroadcastChannel('classroom_realtime_sync_v4');
+  broadcastChannel = new BroadcastChannel('classroom_realtime_sync_v5');
 }
 
 export function initFirebase(config) {
@@ -55,17 +55,21 @@ export function initFirebase(config) {
 
 initFirebase();
 
-// 1. 전 계정/전 기기 무새로고침(Zero-F5) 0.01초 실시간 구독
+// 1. 전 브라우저/전 기기 무새로고침(Zero-F5) 실시간 구독
 export function subscribeToReservations(onUpdate) {
   let unsubFirestore = null;
   let unsubRealtime = null;
 
-  const emitUpdate = (val) => {
-    onUpdate(val);
-    localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(val));
+  const emitUpdate = (remoteData) => {
+    if (!remoteData) return;
+    const currentLocal = getLocalReservations();
+    // 기존 로컬 데이터와 원격 데이터를 병합하여 절대로 다른 날짜의 예약이 지워지지 않도록 보장
+    const merged = { ...currentLocal, ...remoteData };
+    onUpdate(merged);
+    localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(merged));
   };
 
-  // 1차: Firestore Realtime Stream
+  // Firestore Realtime Stream
   if (firestoreDb) {
     try {
       unsubFirestore = onSnapshot(collection(firestoreDb, 'reservations'), (snapshot) => {
@@ -84,7 +88,7 @@ export function subscribeToReservations(onUpdate) {
     }
   }
 
-  // 2차: Realtime DB
+  // Realtime DB
   if (dbInstance) {
     try {
       const resRef = ref(dbInstance, 'reservations');
@@ -101,7 +105,7 @@ export function subscribeToReservations(onUpdate) {
     }
   }
 
-  // 3차: 브라우저 내부 / 멀티 탭 / 멀티 창 즉시 이벤트 버스
+  // 로컬 탭/창 간 실시간 동기화
   const notifyLocal = () => {
     const cached = getLocalReservations();
     onUpdate(cached);
@@ -116,11 +120,17 @@ export function subscribeToReservations(onUpdate) {
     if (msg.data && msg.data.type === 'RESERVATIONS_UPDATED') notifyLocal();
   };
 
+  // 주기적 동기화 폴링 (1000ms) - F5 필요없이 타 브라우저 입력 즉시 반영
+  const pollInterval = setInterval(() => {
+    notifyLocal();
+  }, 1000);
+
   window.addEventListener('classroom_data_change', handleCustomEvent);
   window.addEventListener('storage', handleStorage);
   if (broadcastChannel) broadcastChannel.addEventListener('message', handleBroadcast);
 
   return () => {
+    clearInterval(pollInterval);
     if (typeof unsubFirestore === 'function') unsubFirestore();
     if (typeof unsubRealtime === 'function') unsubRealtime();
     window.removeEventListener('classroom_data_change', handleCustomEvent);
@@ -129,25 +139,26 @@ export function subscribeToReservations(onUpdate) {
   };
 }
 
-// 2. 최근 변경 내역 (히스토리) 60명 전 교사 실시간 구독
+// 2. 히스토리 실시간 구독
 export function subscribeToHistory(onUpdate) {
   let unsubFirestore = null;
   let unsubRealtime = null;
 
   const emitUpdate = (list) => {
+    if (!list || list.length === 0) return;
     onUpdate(list);
     localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(list));
   };
 
   if (firestoreDb) {
     try {
-      const q = query(collection(firestoreDb, 'history'), orderBy('timestamp', 'desc'), limit(150));
+      const q = query(collection(firestoreDb, 'history'), orderBy('timestamp', 'desc'), limit(200));
       unsubFirestore = onSnapshot(q, (snapshot) => {
         const list = [];
         snapshot.forEach(doc => {
           list.push({ id: doc.id, ...doc.data() });
         });
-        emitUpdate(list);
+        if (list.length > 0) emitUpdate(list);
       }, (err) => {
         console.warn('[Firestore History] Listener:', err.message);
       });
@@ -162,7 +173,7 @@ export function subscribeToHistory(onUpdate) {
       unsubRealtime = onValue(histRef, (snapshot) => {
         const val = snapshot.val() || {};
         const list = Object.keys(val).map(k => ({ id: k, ...val[k] })).sort((a, b) => b.timestamp - a.timestamp);
-        emitUpdate(list.slice(0, 150));
+        if (list.length > 0) emitUpdate(list.slice(0, 200));
       });
     } catch (e) {
       console.warn('[Realtime History] Setup error:', e);
@@ -183,11 +194,16 @@ export function subscribeToHistory(onUpdate) {
     if (msg.data && msg.data.type === 'HISTORY_UPDATED') notifyLocal();
   };
 
+  const pollInterval = setInterval(() => {
+    notifyLocal();
+  }, 1000);
+
   window.addEventListener('classroom_data_change', handleCustomEvent);
   window.addEventListener('storage', handleStorage);
   if (broadcastChannel) broadcastChannel.addEventListener('message', handleBroadcast);
 
   return () => {
+    clearInterval(pollInterval);
     if (typeof unsubFirestore === 'function') unsubFirestore();
     if (typeof unsubRealtime === 'function') unsubRealtime();
     window.removeEventListener('classroom_data_change', handleCustomEvent);
@@ -196,26 +212,28 @@ export function subscribeToHistory(onUpdate) {
   };
 }
 
-// 3. 단일 예약 저장 / 수정 / 삭제 (자동 삭제 절대 금지, 인위적 삭제만 허용)
+// 3. 단일 예약 저장/수정/삭제 (기존 다른 일정을 절대로 삭제하지 않고 병합!)
 export async function saveReservation(roomId, dateStr, periodId, text, oldText = '') {
   const key = `${roomId}_${dateStr}_${periodId}`;
   const nowTs = Date.now();
   const trimmed = (text || '').trim();
 
   const logText = trimmed 
-    ? `[${dateStr}] ${roomIdName(roomId)} ${periodIdName(periodId)}: '${trimmed}' 예약 등록/수정됨`
-    : `[${dateStr}] ${roomIdName(roomId)} ${periodIdName(periodId)}: 기존 예약 삭제됨`;
+    ? `[${dateStr}] ${roomIdName(roomId)} ${periodIdName(periodId)}: '${trimmed}' 예약 등록됨`
+    : `[${dateStr}] ${roomIdName(roomId)} ${periodIdName(periodId)}: 예약 삭제됨`;
 
-  // 1. 로컬 지속성 캐시 보장
-  const localCache = getLocalReservations();
+  // 1. 기존 로컬 데이터를 읽어 해당 키만 변경 (다른 일정 삭제 절대 방지)
+  const currentReservations = getLocalReservations();
+  const updatedCache = { ...currentReservations };
+
   if (trimmed) {
-    localCache[key] = { roomId, date: dateStr, periodId, text: trimmed, updatedAt: nowTs };
+    updatedCache[key] = { roomId, date: dateStr, periodId, text: trimmed, updatedAt: nowTs };
   } else {
-    delete localCache[key];
+    delete updatedCache[key];
   }
-  localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(localCache));
+  localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(updatedCache));
 
-  // 2. 히스토리 생성 (인위적 조작에 의해 삭제된 기록도 타임스탬프와 함께 표출)
+  // 2. 히스토리 기록
   const localHist = getLocalHistory();
   localHist.unshift({
     id: 'h_' + nowTs + '_' + Math.random().toString(36).substr(2, 6),
@@ -227,9 +245,9 @@ export async function saveReservation(roomId, dateStr, periodId, text, oldText =
     logText,
     timestamp: nowTs
   });
-  localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(localHist.slice(0, 150)));
+  localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(localHist.slice(0, 200)));
 
-  // Broadcast & Dispatch Custom Event
+  // 이벤트 발생
   if (broadcastChannel) {
     broadcastChannel.postMessage({ type: 'RESERVATIONS_UPDATED' });
     broadcastChannel.postMessage({ type: 'HISTORY_UPDATED' });
@@ -255,7 +273,7 @@ export async function saveReservation(roomId, dateStr, periodId, text, oldText =
         timestamp: nowTs
       });
     } catch (e) {
-      console.warn('[Firestore Write Warning]:', e.message);
+      console.warn('[Firestore Write]:', e.message);
     }
   }
 
@@ -277,22 +295,24 @@ export async function saveReservation(roomId, dateStr, periodId, text, oldText =
         timestamp: nowTs
       });
     } catch (e) {
-      console.warn('[Realtime DB Write Warning]:', e.message);
+      console.warn('[Realtime DB Write]:', e.message);
     }
   }
 
-  return localCache;
+  return updatedCache;
 }
 
-// 4. 다중 / 반복 예약 일괄 등록
+// 4. 다중/반복 예약 일괄 등록 (기존 다른 일정을 절대로 덮어쓰지 않고 추가 병합!)
 export async function batchSaveReservations(reservationsArray, batchLogText) {
   if (!reservationsArray || reservationsArray.length === 0) return;
   const nowTs = Date.now();
 
-  const localCache = getLocalReservations();
+  const currentReservations = getLocalReservations();
+  const updatedCache = { ...currentReservations };
+
   reservationsArray.forEach(item => {
     const key = `${item.roomId}_${item.date}_${item.periodId}`;
-    localCache[key] = {
+    updatedCache[key] = {
       roomId: item.roomId,
       date: item.date,
       periodId: item.periodId,
@@ -300,7 +320,7 @@ export async function batchSaveReservations(reservationsArray, batchLogText) {
       updatedAt: nowTs
     };
   });
-  localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(localCache));
+  localStorage.setItem(LOCAL_STORAGE_KEY_RESERVATIONS, JSON.stringify(updatedCache));
 
   const localHist = getLocalHistory();
   localHist.unshift({
@@ -310,7 +330,7 @@ export async function batchSaveReservations(reservationsArray, batchLogText) {
     logText: batchLogText,
     timestamp: nowTs
   });
-  localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(localHist.slice(0, 150)));
+  localStorage.setItem(LOCAL_STORAGE_KEY_HISTORY, JSON.stringify(localHist.slice(0, 200)));
 
   if (broadcastChannel) {
     broadcastChannel.postMessage({ type: 'RESERVATIONS_UPDATED' });
@@ -337,7 +357,7 @@ export async function batchSaveReservations(reservationsArray, batchLogText) {
         timestamp: nowTs
       });
     } catch (e) {
-      console.warn('[Firestore Batch Warning]:', e.message);
+      console.warn('[Firestore Batch]:', e.message);
     }
   }
 
@@ -360,11 +380,11 @@ export async function batchSaveReservations(reservationsArray, batchLogText) {
         timestamp: nowTs
       });
     } catch (e) {
-      console.warn('[Realtime DB Batch Warning]:', e.message);
+      console.warn('[Realtime DB Batch]:', e.message);
     }
   }
 
-  return localCache;
+  return updatedCache;
 }
 
 export function getLocalReservations() {
